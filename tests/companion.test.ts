@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { Companion, shortestAngle } from '../src/xr/Companion';
+import { Room } from '../src/xr/room';
 
 const head = (x: number, z: number) => new THREE.Vector3(x, 1.6, z);
-const run = (c: Companion, seconds: number, path: (t: number) => THREE.Vector3, t0 = 0) => {
+const run = (c: Companion, seconds: number, path: (t: number) => THREE.Vector3, t0 = 0, room?: Room) => {
   const dt = 1 / 72;
-  for (let t = 0; t < seconds; t += dt) c.update(dt, path(t0 + t));
+  for (let t = 0; t < seconds; t += dt) c.update(dt, path(t0 + t), room);
 };
 
 describe('Companion', () => {
@@ -45,6 +46,32 @@ describe('Companion', () => {
     c.reset(new THREE.Vector3(0.1, 0, 0), 0, head(0, 0), new THREE.Vector3(0, 0, -1));
     c.update(1 / 72, head(0, 0));
     expect(Math.hypot(c.position.x, c.position.z)).toBeGreaterThanOrEqual(0.55 - 1e-6);
+  });
+
+  it('walks on the free side and never through a wall', () => {
+    // Corridor along -Z between walls at x = -1.4 and x = 1.2; the player hugs
+    // the right wall (x = 0.9), so there is no room on their right.
+    const room = new Room(0.25);
+    room.geometry = {
+      floorY: 0,
+      floor: null,
+      walls: [
+        { a: { x: 1.2, z: 2 }, b: { x: 1.2, z: -8 } },
+        { a: { x: -1.4, z: 2 }, b: { x: -1.4, z: -8 } },
+      ],
+      obstacles: [],
+    };
+    const c = new Companion();
+    c.reset(new THREE.Vector3(0, 0, -1), 0, head(0.9, 0), new THREE.Vector3(0, 0, -1));
+    const dt = 1 / 72;
+    for (let t = 0; t < 6; t += dt) {
+      c.update(dt, head(0.9, -0.7 * t), room);
+      expect(c.position.x).toBeLessThan(1.2 - 0.2); // never through/into the right wall
+      expect(c.position.x).toBeGreaterThan(-1.4 + 0.2);
+    }
+    run(c, 3, () => head(0.9, -4.2), 0, room);
+    // He settles on the player's left, the free side.
+    expect(c.position.x).toBeLessThan(0.9);
   });
 
   it('computes shortest angles across ±π', () => {

@@ -69,5 +69,8 @@
   "voice.Orus": "Orus — حازم",
   "voice.Iapetus": "Iapetus — واضح",
   "voice.Schedar": "Schedar — هادي",
-  "voice.Umbriel": "Umbriel — مرتاح"
+  "voice.Umbriel": "Umbriel — مرتاح",
+  "room.none": "ما فيه بيانات للغرفة. سوّ «إعداد المساحة» في النظارة أو اضغط «مسح الغرفة».",
+  "room.status": "الغرفة: {walls} جدران، {items} أثاث",
+  "btn.scan": "مسح الغرفة"
 }

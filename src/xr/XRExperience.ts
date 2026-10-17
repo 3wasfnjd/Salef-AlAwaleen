@@ -5,6 +5,7 @@ import { t, type MessageKey } from '../i18n';
 import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import type { SceneApp, ViewMode } from '../scene/SceneApp';
 import { Companion } from './Companion';
+import { EMPTY_ROOM, Room, geometryFromPlanes, type RoomGeometry } from './room';
 import { XRPanel } from './XRPanel';
 
 export interface XRCapabilities {
@@ -54,6 +55,12 @@ export class XRExperience {
   /** "Walk with me" (MR only): the elder stands and walks beside the player. */
   private companionOn = false;
   private readonly companion = new Companion();
+  /** Walls / floor / furniture from WebXR plane detection (Quest Space Setup). */
+  private readonly room = new Room(0.25);
+  private roomRefreshAt = 0;
+  private roomOutline: THREE.LineSegments | null = null;
+  private roomOutlineUntil = 0;
+  private roomCaptureUsed = false;
   /** Latest words of the elder, shown on the panel. */
   private caption = '';
 
@@ -183,6 +190,9 @@ export class XRExperience {
     if (this.app.mode === 'vr') buttons.push({ id: 'env', label: t(`env.${this.app.environments.current}` as MessageKey) });
     if (this.app.mode === 'mr' && !this.companionOn) buttons.push({ id: 'place', label: t('btn.place') });
     if (this.app.mode === 'mr') buttons.push({ id: 'walk', label: this.companionOn ? t('companion.stop') : t('companion.start') });
+    if (this.app.mode === 'mr' && !this.room.known && this.session?.initiateRoomCapture && !this.roomCaptureUsed) {
+      buttons.push({ id: 'scan', label: t('btn.scan') });
+    }
     const voice = this.callbacks.conversation;
     if (voice.configured) {
       if (voice.active && voice.isSpeaking) buttons.push({ id: 'cut', label: t('talk.cut') });
@@ -197,6 +207,11 @@ export class XRExperience {
     if (id === 'mode') void this.setMode(this.app.mode === 'vr' ? 'mr' : 'vr');
     else if (id === 'place') this.setPlacing(true);
     else if (id === 'walk') this.setCompanion(!this.companionOn);
+    else if (id === 'scan') {
+      this.roomCaptureUsed = true; // the API allows one call per session
+      void this.session?.initiateRoomCapture?.().catch(() => undefined);
+      this.refreshPanel();
+    }
     else if (id === 'env') {
       const next = ENVIRONMENTS[(ENVIRONMENTS.indexOf(this.app.environments.current) + 1) % ENVIRONMENTS.length];
       this.hint = t('env.loading');
@@ -277,10 +292,16 @@ export class XRExperience {
       this.hint = t('xr.placedManual');
     }
 
+    if (this.kind === 'ar' && this.elapsed >= this.roomRefreshAt) {
+      this.roomRefreshAt = this.elapsed + 1;
+      this.refreshRoom(frame);
+    }
+    if (this.roomOutline) this.roomOutline.visible = this.app.mode === 'mr' && (this.placing || this.elapsed < this.roomOutlineUntil);
+
     if (this.companionOn) {
       const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
-      this.companion.update(dt, head);
-      this.app.stage.position.copy(this.companion.position);
+      this.companion.update(dt, head, this.room);
+      this.app.stage.position.copy(this.companion.position).setY(this.room.geometry.floorY);
       this.app.stage.rotation.set(0, this.companion.yaw, 0);
       this.app.character?.setLocomotion(this.companion.speed);
       // Keep the panel out of the way while he walks.
@@ -319,7 +340,8 @@ export class XRExperience {
     const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
     if (on) {
       this.setPlacing(false);
-      this.hint = t('companion.hint');
+      this.hint = this.room.known ? this.roomStatus() : t('room.none');
+      this.roomOutlineUntil = this.elapsed + 6;
       this.app.majlis.core.visible = false;
       rig?.setPosture('standing');
       const look = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
@@ -343,7 +365,57 @@ export class XRExperience {
     forward.y = 0;
     if (forward.lengthSq() < 1e-4) forward.set(0, 0, -1);
     forward.normalize();
-    this.placeStageAt(head.clone().addScaledVector(forward, ELDER_DISTANCE).setY(0), head);
+    const at = (d: number, side = 0) => ({
+      x: head.x + forward.x * d - forward.z * side,
+      z: head.z + forward.z * d + forward.x * side,
+    });
+    const from = { x: head.x, z: head.z };
+    const spot = this.room.firstFree([at(ELDER_DISTANCE), at(1.2), at(1.0, 0.6), at(1.0, -0.6), at(0.9)], from) ?? at(ELDER_DISTANCE);
+    this.placeStageAt(new THREE.Vector3(spot.x, this.room.geometry.floorY, spot.z), head);
+  }
+
+  private roomStatus(): string {
+    const g = this.room.geometry;
+    return t('room.status', { walls: String(g.walls.length), items: String(g.obstacles.length) });
+  }
+
+  /** Rebuilds the room model from the planes the headset reports (Space Setup). */
+  private refreshRoom(frame: XRFrame): void {
+    const ref = this.app.renderer.xr.getReferenceSpace();
+    const planes = frame.detectedPlanes;
+    if (!ref || !planes || planes.size === 0) return;
+    const items: Array<{ plane: XRPlane; matrix: Float32Array }> = [];
+    planes.forEach((plane) => {
+      const pose = frame.getPose(plane.planeSpace, ref);
+      if (pose) items.push({ plane, matrix: pose.transform.matrix });
+    });
+    const wasKnown = this.room.known;
+    this.room.geometry = geometryFromPlanes(items);
+    this.updateRoomOutline(this.room.geometry);
+    if (!wasKnown && this.room.known) this.refreshPanel(); // hides the scan button
+  }
+
+  private updateRoomOutline(g: RoomGeometry): void {
+    const pts: number[] = [];
+    const y = g.floorY + 0.02;
+    const loop = (poly: Array<{ x: number; z: number }>, h: number) =>
+      poly.forEach((a, i) => {
+        const b = poly[(i + 1) % poly.length];
+        pts.push(a.x, h, a.z, b.x, h, b.z);
+      });
+    g.walls.forEach((w) => pts.push(w.a.x, y, w.a.z, w.b.x, y, w.b.z, w.a.x, y + 1, w.a.z, w.b.x, y + 1, w.b.z));
+    g.obstacles.forEach((o) => loop(o, y));
+    if (g.floor) loop(g.floor, y);
+    if (!this.roomOutline) {
+      this.roomOutline = new THREE.LineSegments(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({ color: '#f3d58a', transparent: true, opacity: 0.7 }),
+      );
+      this.roomOutline.visible = false;
+      this.app.scene.add(this.roomOutline);
+    }
+    this.roomOutline.geometry.dispose();
+    this.roomOutline.geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
   }
 
   private placeStageAt(point: THREE.Vector3, facing?: THREE.Vector3): void {
@@ -359,6 +431,9 @@ export class XRExperience {
 
   private onSessionEnd(): void {
     this.setCompanion(false);
+    this.room.geometry = EMPTY_ROOM;
+    this.roomCaptureUsed = false;
+    if (this.roomOutline) this.roomOutline.visible = false;
     this.session = null;
     this.kind = null;
     this.hitTestSource = null;

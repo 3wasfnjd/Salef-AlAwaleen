@@ -69,5 +69,8 @@
   "voice.Orus": "Orus — firm",
   "voice.Iapetus": "Iapetus — clear",
   "voice.Schedar": "Schedar — calm",
-  "voice.Umbriel": "Umbriel — easy-going"
+  "voice.Umbriel": "Umbriel — easy-going",
+  "room.none": "No room data. Run Space Setup on the headset or press “Scan room”.",
+  "room.status": "Room: {walls} walls, {items} furniture",
+  "btn.scan": "Scan room"
 }

@@ -91,7 +91,7 @@ async function boot(): Promise<void> {
   conversation.addView(overlay);
 
   // Debug handle for automated render checks (?debug).
-  if (params.has('debug')) Object.assign(window, { __salef: app, __conversation: conversation });
+  if (params.has('debug')) Object.assign(window, { __salef: app, __conversation: conversation, __xr: xr });
 
   // The packaged Quest app (immersive mode) asks to enter XR straight away.
   // If the runtime still requires a user gesture, the buttons remain available.

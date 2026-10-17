@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Room } from './room';
 
 export interface CompanionOptions {
   /** Where he walks relative to the player's walking direction (metres). */
@@ -34,7 +35,9 @@ const DEFAULTS: CompanionOptions = {
  * the player, following their walking direction (not every head turn), and
  * stops and turns to face them when they stand still. Pure logic: feed it
  * the player's head pose each frame; read position / yaw / speed back.
- * Works on the floor plane (y = 0 in a local-floor reference space).
+ * Works on the floor plane. With a known `Room` he walks around walls and
+ * furniture: his spot falls back to the other side / behind the player when
+ * the preferred one is blocked, and each step slides along obstacles.
  */
 export class Companion {
   readonly position = new THREE.Vector3();
@@ -65,7 +68,7 @@ export class Companion {
     this.hasLastHead = true;
   }
 
-  update(dt: number, head: THREE.Vector3): void {
+  update(dt: number, head: THREE.Vector3, room: Room = new Room()): void {
     if (dt <= 0) return;
     const o = this.opts;
     const floorHead = this.tmp.set(head.x, 0, head.z);
@@ -80,9 +83,20 @@ export class Companion {
     this.lastHead.copy(head);
     this.hasLastHead = true;
 
-    // His spot: beside the player (to their right), slightly ahead.
+    // His spot: beside the player (to their right), slightly ahead; if a wall or
+    // furniture is there, the left side, then behind, then where he stands.
     const right = new THREE.Vector3(-this.heading.z, 0, this.heading.x);
-    this.target.copy(floorHead).addScaledVector(right, o.side).addScaledVector(this.heading, o.ahead);
+    const spot = (side: number, ahead: number) => ({
+      x: floorHead.x + right.x * side + this.heading.x * ahead,
+      z: floorHead.z + right.z * side + this.heading.z * ahead,
+    });
+    const here = { x: this.position.x, z: this.position.z };
+    const chosen =
+      room.firstFree(
+        [spot(o.side, o.ahead), spot(-o.side, o.ahead), spot(o.side, -0.6), spot(-o.side, -0.6), spot(0, -0.9)],
+        here,
+      ) ?? here;
+    this.target.set(chosen.x, 0, chosen.z);
 
     const toTarget = new THREE.Vector3().subVectors(this.target, this.position);
     const dist = toTarget.length();
@@ -94,8 +108,13 @@ export class Companion {
     let desiredYaw: number;
     if (this.speed > 0.05 && dist > 1e-3) {
       const step = Math.min(dist, this.speed * dt);
-      this.position.addScaledVector(toTarget.normalize(), step);
-      desiredYaw = Math.atan2(toTarget.x, toTarget.z);
+      const dir = toTarget.normalize();
+      const wanted = { x: here.x + dir.x * step, z: here.z + dir.z * step };
+      // If he somehow starts inside an obstacle, let him walk out of it.
+      const next = room.isBlocked(here) ? wanted : room.step(here, wanted);
+      this.position.set(next.x, 0, next.z);
+      if (next === here) this.speed = 0; // fully blocked this frame
+      desiredYaw = Math.atan2(dir.x, dir.z);
     } else {
       desiredYaw = Math.atan2(floorHead.x - this.position.x, floorHead.z - this.position.z);
     }
@@ -105,7 +124,8 @@ export class Companion {
     const gap = away.length();
     if (gap < o.personalSpace) {
       if (gap < 1e-4) away.copy(right);
-      this.position.copy(floorHead).addScaledVector(away.normalize(), o.personalSpace);
+      const pushed = floorHead.clone().addScaledVector(away.normalize(), o.personalSpace);
+      if (!room.isBlocked({ x: pushed.x, z: pushed.z })) this.position.copy(pushed);
     }
 
     this.yaw += shortestAngle(this.yaw, desiredYaw) * Math.min(1, dt * o.turnRate);
