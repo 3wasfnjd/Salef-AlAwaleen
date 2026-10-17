@@ -12,7 +12,7 @@
   "navigationDividerColorDark": "#1C140E",
   "backgroundColor": "#1C140E",
   "enableNotifications": false,
-  "startUrl": "/Salef-AlAwaleen/?app=quest",
+  "startUrl": "/Salef-AlAwaleen/?app=quest&mode=mr",
   "fullScopeUrl": "https://3wasfnjd.github.io/Salef-AlAwaleen/",
   "webManifestUrl": "__WEB_MANIFEST_URL__",
   "iconUrl": "__ICON_URL__",

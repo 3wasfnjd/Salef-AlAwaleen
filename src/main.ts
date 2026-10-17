@@ -72,6 +72,7 @@ async function boot(): Promise<void> {
     onSessionEnd: () => document.body.classList.remove('in-xr'),
     setEnvironment,
     conversation,
+    motion: () => CHARACTERS[conversation.character].motion,
   });
 
   const overlay = new Overlay(ui, caps, {
@@ -115,7 +116,9 @@ async function boot(): Promise<void> {
 
   // The packaged Quest app (immersive mode) asks to enter XR straight away.
   // If the runtime still requires a user gesture, the buttons remain available.
-  if (params.get('app') === 'quest' && (caps.ar || caps.vr)) {
+  // Without an access code the voice can't start, so stay on the page to let the player enter it.
+  const needsCode = conversation.configured && !conversation.accessCode;
+  if (params.get('app') === 'quest' && (caps.ar || caps.vr) && !needsCode) {
     xr.start(params.get('mode') === 'mr' ? 'mr' : 'vr')
       .then(() => document.body.classList.add('in-xr'))
       .catch(() => undefined);

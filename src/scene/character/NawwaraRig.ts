@@ -26,6 +26,8 @@ const MOUTH = '#8a2537';
 
 const HOVER = 0.12;
 const SEAT = 0.1;
+/** She is a little fairy: about half a metre tall. */
+const SCALE = 0.55;
 
 const damp = (c: number, t: number, rate: number, dt: number) => c + (t - c) * (1 - Math.exp(-rate * dt));
 
@@ -162,6 +164,7 @@ export class NawwaraRig implements CharacterRig {
 
   constructor() {
     this.object.name = 'nawwara';
+    this.object.scale.setScalar(SCALE);
     const gradient = this.keep(toonGradient());
     const toonVC = this.keep(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: gradient }));
     const mesh = (b: MergedBuilder, mat: THREE.Material = toonVC) => {
@@ -374,7 +377,7 @@ export class NawwaraRig implements CharacterRig {
   }
 
   setLocomotion(speed: number): void {
-    this.walk = this.posture === 'standing' ? speed : 0;
+    this.walk = this.posture === 'seated' ? 0 : speed;
   }
 
   setExpression(e: Expression): void {
@@ -384,16 +387,26 @@ export class NawwaraRig implements CharacterRig {
   update(dt: number, time: number): void {
     const s = this.state;
     const talking = s === 'speaking' || s === 'storytelling';
-    const walking = this.walk > 0.08;
+    const flying = this.posture === 'flying';
+    const walking = !flying && this.walk > 0.08;
 
     // Hover / sit and bob. Reacting = happy little hops.
-    const baseY = this.posture === 'seated' ? SEAT : HOVER;
+    // Flying: the companion carries her through the air; here only a gentle bob.
+    const baseY = this.posture === 'seated' ? SEAT : flying ? 0 : HOVER;
     const hop = s === 'reacting' ? Math.abs(Math.sin(time * 9)) * 0.06 : 0;
     this.hoverY = damp(this.hoverY, baseY, 6, dt);
     this.hover.position.y = this.hoverY + Math.sin(time * 2.3) * (this.posture === 'seated' ? 0.004 : 0.02) + hop;
 
     // Body lean and head tilt by state.
-    const leanT = walking ? 0.12 * Math.min(1, this.walk) : s === 'listening' ? 0.1 : s === 'interrupted' ? -0.05 : 0;
+    const leanT = flying
+      ? 0.25 * Math.min(1, this.walk / 1.2) + (s === 'listening' ? 0.08 : 0)
+      : walking
+        ? 0.12 * Math.min(1, this.walk)
+        : s === 'listening'
+          ? 0.1
+          : s === 'interrupted'
+            ? -0.05
+            : 0;
     const tiltT = s === 'listening' ? 0.14 : s === 'thinking' ? -0.1 : talking ? Math.sin(time * 1.4) * 0.06 : 0;
     this.lean = damp(this.lean, leanT, 6, dt);
     this.tilt = damp(this.tilt, tiltT, 6, dt);
@@ -404,7 +417,8 @@ export class NawwaraRig implements CharacterRig {
     // Legs: walk cycle, or sitting with legs forward.
     this.walkPhase += dt * (4 + this.walk * 7);
     const legSwing = walking ? Math.sin(this.walkPhase) * 0.5 * Math.min(1, this.walk) : 0;
-    const seatedLegs = this.posture === 'seated' ? -1.35 : 0;
+    // Seated: legs forward. Flying: legs trail back with a lazy kick.
+    const seatedLegs = this.posture === 'seated' ? -1.35 : flying ? 0.45 + Math.sin(time * 3) * 0.12 : 0;
     this.legs[0].rotation.x = damp(this.legs[0].rotation.x, seatedLegs + legSwing, 10, dt);
     this.legs[1].rotation.x = damp(this.legs[1].rotation.x, seatedLegs - legSwing, 10, dt);
 
@@ -439,7 +453,7 @@ export class NawwaraRig implements CharacterRig {
     this.armL.lower.rotation.x = damp(this.armL.lower.rotation.x, lBend, k, dt);
 
     // Wings flutter faster when moving, excited or telling a story.
-    const flapRate = walking || s === 'reacting' ? 16 : s === 'storytelling' ? 10 : 5;
+    const flapRate = flying || walking || s === 'reacting' ? 16 : s === 'storytelling' ? 10 : 5;
     const flap = 0.35 + Math.sin(time * flapRate) * 0.3;
     this.wings[0].parent!.rotation.y = -flap - 0.4;
     this.wings[1].parent!.rotation.y = flap + 0.4;

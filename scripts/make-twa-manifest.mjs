@@ -23,7 +23,7 @@ const manifest = JSON.parse(
 );
 manifest.appVersionCode = Number(versionCode);
 // The immersive build asks the page to enter WebXR immediately on launch.
-if (mode === '2D') manifest.startUrl = manifest.startUrl.replace('?app=quest', '?app=quest-2d');
+if (mode === '2D') manifest.startUrl = manifest.startUrl.replace('?app=quest&mode=mr', '?app=quest-2d');
 await mkdir(outDir, { recursive: true });
 await writeFile(join(outDir, 'twa-manifest.json'), JSON.stringify(manifest, null, 2));
 console.log(JSON.stringify(manifest, null, 2));

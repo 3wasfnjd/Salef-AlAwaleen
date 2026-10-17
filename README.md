@@ -12,6 +12,7 @@
 الرابط: https://3wasfnjd.github.io/Salef-AlAwaleen/
 
 - [التقرير التقني](docs/TECHNICAL_REPORT_AR.md)
+- [التحكم في Meta Quest](docs/QUEST_CONTROLS_AR.md)
 - [حالة المرحلة الأولى](docs/PHASE1_AR.md)
 - [تشغيل المحادثة الصوتية (المرحلة الثانية)](docs/PHASE2_SETUP_AR.md)
 - [سجل تنظيف المستودع](docs/CLEANUP_AR.md)

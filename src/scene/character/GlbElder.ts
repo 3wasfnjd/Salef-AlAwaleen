@@ -124,7 +124,8 @@ export class GlbElder implements CharacterRig {
     this.current = next;
   }
 
-  setPosture(p: Posture): void {
+  setPosture(requested: Posture): void {
+    const p: Posture = requested === 'flying' ? 'standing' : requested; // the elder keeps his feet on the ground
     if (p === this.posture) return;
     this.posture = p;
     this.model.position.y = p === 'seated' ? SEAT_HEIGHT : 0;

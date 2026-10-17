@@ -82,5 +82,9 @@
   "voice.Achernar": "Achernar — soft",
   "voice.Aoede": "Aoede — breezy",
   "voice.Puck": "Puck — playful",
-  "kids.notice": "Nawwara is for children with adult supervision. The child's voice is sent to Google Gemini (the free tier may use data to improve its services), so don't share personal information."
+  "kids.notice": "Nawwara is for children with adult supervision. The child's voice is sent to Google Gemini (the free tier may use data to improve its services), so don't share personal information.",
+  "shot.bubble": "🫧 Bubbles",
+  "shot.firework": "🎆 Fireworks",
+  "shot.water": "💧 Water",
+  "shot.confetti": "🎉 Confetti"
 }

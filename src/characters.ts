@@ -15,6 +15,8 @@ export interface CharacterDef {
   defaultVoice: string;
   /** Playback colouring that suits the character. */
   tone: Exclude<VoiceTone, 'none'>;
+  /** How the character moves with the player in mixed reality. */
+  motion: 'walk' | 'fly';
   /** Sent once when a session starts so the character greets the player. */
   greeting: string;
   load(): Promise<CharacterRig>;
@@ -31,6 +33,7 @@ export const CHARACTERS: Record<CharacterId, CharacterDef> = {
     voices: ['Algenib', 'Charon', 'Sadaltager', 'Enceladus', 'Orus', 'Iapetus', 'Schedar', 'Umbriel'],
     defaultVoice: 'Algenib',
     tone: 'elder',
+    motion: 'walk',
     greeting: '(دخل الضيف المجلس الآن وجلس قدامك. رحّب به باختصار.)',
     async load() {
       try {
@@ -47,6 +50,7 @@ export const CHARACTERS: Record<CharacterId, CharacterDef> = {
     voices: ['Leda', 'Laomedeia', 'Zephyr', 'Autonoe', 'Achernar', 'Aoede', 'Puck'],
     defaultVoice: 'Leda',
     tone: 'child',
+    motion: 'fly',
     greeting: '(جاء صديقك الآن. رحّبي به بفرح وبجملة قصيرة.)',
     load: async () => new NawwaraRig(),
   },

@@ -4,7 +4,10 @@ import type { Transcript, VoiceStatus } from '../core/voice';
 import { t, type MessageKey } from '../i18n';
 import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import type { SceneApp, ViewMode } from '../scene/SceneApp';
+import { CelebrationShots, SHOT_KINDS, type ShotKind } from './CelebrationShots';
 import { Companion } from './Companion';
+import { Sfx } from './sfx';
+import { FlyCompanion } from './FlyCompanion';
 import { EMPTY_ROOM, Room, geometryFromPlanes, type RoomGeometry } from './room';
 import { XRPanel } from './XRPanel';
 
@@ -17,6 +20,8 @@ export interface XRCallbacks {
   onSessionEnd(): void;
   setEnvironment(id: EnvironmentId): Promise<void>;
   conversation: Conversation;
+  /** How the current character moves with the player in MR. */
+  motion(): 'walk' | 'fly';
 }
 
 const ELDER_DISTANCE = 1.5;
@@ -46,8 +51,14 @@ export class XRExperience {
   /** Start walking together on the next frame (once the head pose is known). */
   private companionPending = false;
   private reticleValid = false;
-  private lastButtons = new Map<XRInputSource, boolean>();
-  private lastCut = new Map<XRInputSource, boolean>();
+  /** Previous button states per controller, for press edges. */
+  private readonly pads = new Map<XRInputSource, { trigger: boolean; stick: boolean; a: boolean; b: boolean; consumed: boolean }>();
+  private readonly sourceController = new Map<XRInputSource, THREE.Group>();
+  private readonly shots: CelebrationShots;
+  private shotKind: ShotKind = 'bubble';
+  private readonly shotLabel: THREE.Sprite;
+  private shotLabelUntil = 0;
+  private sfx: Sfx | null = null;
   private frames = 0;
   private fpsWindowStart = 0;
   private fps = 0;
@@ -57,6 +68,8 @@ export class XRExperience {
   /** "Walk with me" (MR only): the elder stands and walks beside the player. */
   private companionOn = false;
   private readonly companion = new Companion();
+  private readonly flyer = new FlyCompanion();
+  private motion: 'walk' | 'fly' = 'walk';
   /** Walls / floor / furniture from WebXR plane detection (Quest Space Setup). */
   private readonly room = new Room(0.25);
   private roomRefreshAt = 0;
@@ -89,18 +102,44 @@ export class XRExperience {
     this.reticle.visible = false;
     app.scene.add(this.reticle);
 
-    // Panel sits beside the elder, angled toward the player.
-    this.panel.mesh.position.set(0.62, 0.95, 0.75);
-    this.panel.mesh.rotation.set(-0.3, -0.45, 0);
+    // The menu is hidden to keep the space open; the thumbstick click shows it in front of the player.
+    this.panel.mesh.scale.setScalar(0.7);
     this.panel.mesh.visible = false;
-    app.stage.add(this.panel.mesh);
+    app.scene.add(this.panel.mesh);
 
     this.setupControllers();
+
+    const room = this.room;
+    this.shots = new CelebrationShots(
+      {
+        get floorY() {
+          return room.geometry.floorY;
+        },
+        crosses: (a, b) => this.room.known && this.room.crosses(a, b),
+        target: () => {
+          const rig = this.app.character?.object;
+          if (!rig || !rig.visible) return null;
+          return rig.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, this.callbacks.motion() === 'fly' ? 0.28 : 0.8, 0));
+        },
+      },
+      {
+        sound: (name) => this.sfx?.play(name),
+        hitCharacter: () => this.app.behavior.dispatch({ type: 'react' }, performance.now()),
+      },
+    );
+    app.scene.add(this.shots.group);
+    this.shotLabel = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false }));
+    this.shotLabel.scale.set(0.16, 0.05, 1);
+    this.shotLabel.visible = false;
+    this.shotLabel.renderOrder = 10;
+    app.scene.add(this.shotLabel);
+
     callbacks.conversation.addView({
       status: (s: VoiceStatus) => {
         this.voiceStatus = s;
         if (s.kind === 'connecting') this.caption = '';
         this.refreshPanel();
+        if (s.kind === 'error') this.setMenu(true); // make sure the player sees what went wrong
       },
       transcript: (tr: Transcript) => {
         if (tr.role === 'character') this.caption = tr.text;
@@ -119,6 +158,7 @@ export class XRExperience {
     const xr = navigator.xr;
     if (!xr) throw new Error('WebXR unavailable');
 
+    this.sfx ??= new Sfx(); // created inside the click that enters XR, so it may play
     let session: XRSession;
     if (this.caps.ar) {
       session = await xr.requestSession('immersive-ar', {
@@ -152,7 +192,7 @@ export class XRExperience {
     }
 
     this.needsInitialPlacement = true;
-    this.panel.mesh.visible = true;
+    this.panel.mesh.visible = false;
     this.applyMode(mode);
   }
 
@@ -244,7 +284,12 @@ export class XRExperience {
       const line = new THREE.Line(lineGeo, lineMat);
       line.scale.z = 2;
       controller.add(line);
-      controller.addEventListener('select', () => this.onSelect(controller));
+      controller.addEventListener('connected', (e) => this.sourceController.set((e as unknown as { data: XRInputSource }).data, controller));
+      // Hand tracking (no gamepad): a pinch presses menu buttons or fires one shot.
+      controller.addEventListener('select', (e) => {
+        const source = (e as unknown as { data?: XRInputSource }).data;
+        if (!source?.gamepad) this.onSelect(controller);
+      });
       this.app.scene.add(controller);
       this.controllers.push(controller);
     }
@@ -269,7 +314,47 @@ export class XRExperience {
       const p = new THREE.Vector3().setFromMatrixPosition(this.reticle.matrix);
       this.placeStageAt(p);
       this.setPlacing(false);
+      return;
     }
+    this.fireFrom(controller, controller);
+  }
+
+  private fireFrom(controller: THREE.Object3D, hand: unknown, source?: XRInputSource): void {
+    this.tmpMatrix.identity().extractRotation(controller.matrixWorld);
+    const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+    const dir = new THREE.Vector3(0, 0, -1).applyMatrix4(this.tmpMatrix).normalize();
+    if (this.shots.fire(this.shotKind, origin, dir, hand)) {
+      const actuator = source?.gamepad?.hapticActuators?.[0] as { pulse?: (v: number, ms: number) => Promise<boolean> } | undefined;
+      void actuator?.pulse?.(this.shotKind === 'bubble' || this.shotKind === 'water' ? 0.12 : 0.35, 22)?.catch(() => undefined);
+    }
+  }
+
+  /** A on the right controller: next shot type, with a little label by the hand. */
+  private cycleShot(controller: THREE.Object3D | undefined): void {
+    this.shotKind = SHOT_KINDS[(SHOT_KINDS.indexOf(this.shotKind) + 1) % SHOT_KINDS.length];
+    this.sfx?.play('click');
+    const canvas = document.createElement('canvas');
+    canvas.width = 384;
+    canvas.height = 120;
+    const c = canvas.getContext('2d')!;
+    c.fillStyle = 'rgba(28,20,14,0.85)';
+    c.beginPath();
+    c.roundRect(0, 0, 384, 120, 40);
+    c.fill();
+    c.fillStyle = '#ffe9b0';
+    c.font = '600 56px system-ui, "Noto Sans Arabic", sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.direction = 'rtl';
+    c.fillText(t(`shot.${this.shotKind}` as MessageKey), 192, 64);
+    const mat = this.shotLabel.material;
+    mat.map?.dispose();
+    mat.map = new THREE.CanvasTexture(canvas);
+    mat.map.colorSpace = THREE.SRGBColorSpace;
+    mat.needsUpdate = true;
+    if (controller) this.shotLabel.position.setFromMatrixPosition(controller.matrixWorld).add(new THREE.Vector3(0, 0.12, 0));
+    this.shotLabel.visible = true;
+    this.shotLabelUntil = this.elapsed + 1.5;
   }
 
   private onFrame(dt: number, frame?: XRFrame): void {
@@ -312,26 +397,64 @@ export class XRExperience {
 
     if (this.companionOn) {
       const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
-      this.companion.update(dt, head, this.room);
-      this.app.stage.position.copy(this.companion.position).setY(this.room.geometry.floorY);
-      this.app.stage.rotation.set(0, this.companion.yaw, 0);
-      this.app.character?.setLocomotion(this.companion.speed);
-      // Keep the panel out of the way while he walks.
-      this.panel.mesh.visible = this.companion.speed < 0.1;
+      if (this.callbacks.motion() !== this.motion) this.startMotion(head, camera); // character switched
+      if (this.motion === 'fly') {
+        const look = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+        this.flyer.update(dt, head, look, this.room);
+        this.app.stage.position.copy(this.flyer.position);
+        this.app.stage.rotation.set(0, this.flyer.yaw, 0);
+        this.app.character?.setLocomotion(this.flyer.speed);
+      } else {
+        this.companion.update(dt, head, this.room);
+        this.app.stage.position.copy(this.companion.position).setY(this.room.geometry.floorY);
+        this.app.stage.rotation.set(0, this.companion.yaw, 0);
+        this.app.character?.setLocomotion(this.companion.speed);
+      }
     }
 
-    // Hover feedback; A/X toggles VR/MR, B/Y cuts the elder off.
+    // Controllers:
+    //   trigger  → menu button under the ray, otherwise fire (hold for a stream)
+    //   A (right) → next shot type · X (left) → VR/MR
+    //   B / Y    → cut the character off · thumbstick click → show/hide the menu
     let hovered: string | null = null;
     for (const c of this.controllers) hovered ??= this.panelHit(c);
     this.panel.setHovered(hovered);
     for (const source of this.session.inputSources) {
-      const pressed = Boolean(source.gamepad?.buttons[4]?.pressed);
-      if (pressed && !this.lastButtons.get(source) && this.kind === 'ar') this.activate('mode');
-      this.lastButtons.set(source, pressed);
-      const cut = Boolean(source.gamepad?.buttons[5]?.pressed);
-      if (cut && !this.lastCut.get(source)) this.callbacks.conversation.interrupt();
-      this.lastCut.set(source, cut);
+      const gp = source.gamepad;
+      if (!gp) continue;
+      const controller = this.sourceController.get(source);
+      const now = {
+        trigger: Boolean(gp.buttons[0]?.pressed),
+        stick: Boolean(gp.buttons[3]?.pressed),
+        a: Boolean(gp.buttons[4]?.pressed),
+        b: Boolean(gp.buttons[5]?.pressed),
+      };
+      const was = this.pads.get(source) ?? { trigger: false, stick: false, a: false, b: false, consumed: false };
+      let consumed = was.consumed;
+      if (now.trigger && !was.trigger) {
+        const button = controller ? this.panelHit(controller) : null;
+        consumed = false;
+        if (button) {
+          this.activate(button);
+          consumed = true;
+        } else if (this.placing && this.reticleValid) {
+          this.placeStageAt(new THREE.Vector3().setFromMatrixPosition(this.reticle.matrix));
+          this.setPlacing(false);
+          consumed = true;
+        }
+      }
+      if (now.trigger && !consumed && controller) this.fireFrom(controller, source, source);
+      if (now.stick && !was.stick) this.setMenu(!this.panel.mesh.visible);
+      if (now.a && !was.a) {
+        if (source.handedness === 'left') {
+          if (this.kind === 'ar') this.activate('mode');
+        } else this.cycleShot(controller);
+      }
+      if (now.b && !was.b) this.callbacks.conversation.interrupt();
+      this.pads.set(source, { ...now, consumed: now.trigger && consumed });
     }
+    this.shots.update(dt);
+    if (this.shotLabel.visible && this.elapsed > this.shotLabelUntil) this.shotLabel.visible = false;
 
     // Frame-rate measurement shown on the panel (real numbers from the device).
     this.frames++;
@@ -342,6 +465,37 @@ export class XRExperience {
     }
     const words = this.caption.length > 70 ? `…${this.caption.slice(-70)}` : this.caption;
     this.panel.setInfo([this.hint || words, `${this.fps} fps`].filter(Boolean).join(' · '));
+  }
+
+  /** Shows the menu 55 cm in front of the player, a little below eye level, or hides it. */
+  private setMenu(open: boolean): void {
+    this.panel.mesh.visible = open && this.session !== null;
+    if (!this.panel.mesh.visible) return;
+    const camera = this.app.renderer.xr.getCamera();
+    const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+    forward.y = 0;
+    if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+    forward.normalize();
+    this.panel.mesh.position.copy(head).addScaledVector(forward, 0.55).add(new THREE.Vector3(0, -0.18, 0));
+    this.panel.mesh.lookAt(head);
+    this.refreshPanel();
+  }
+
+  /** (Re)starts the walking or flying follower from where the character is now. */
+  private startMotion(head: THREE.Vector3, camera: THREE.Camera): void {
+    this.motion = this.callbacks.motion();
+    const look = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+    if (this.motion === 'fly') {
+      this.app.setPosture('flying');
+      const start = this.app.stage.position.clone();
+      start.y = Math.max(start.y, head.y - 0.55);
+      this.flyer.reset(start, look);
+    } else {
+      this.app.setPosture('standing');
+      this.app.stage.position.y = this.room.geometry.floorY;
+      this.companion.reset(this.app.stage.position, this.app.stage.rotation.y, head, look);
+    }
   }
 
   private setCompanion(on: boolean): void {
@@ -355,17 +509,15 @@ export class XRExperience {
       this.hint = this.room.known ? this.roomStatus() : t('room.none');
       this.roomOutlineUntil = this.elapsed + 6;
       this.app.majlis.core.visible = false;
-      this.app.setPosture('standing');
-      const look = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
-      this.companion.reset(this.app.stage.position, this.app.stage.rotation.y, head, look);
+      this.startMotion(head, camera);
     } else {
       this.hint = '';
       rig?.setLocomotion(0);
       this.app.setPosture('seated');
       this.app.majlis.core.visible = true;
-      this.panel.mesh.visible = this.session !== null;
+      this.app.stage.position.y = this.room.geometry.floorY;
       // Sit down right where he is, facing the player.
-      this.placeStageAt(this.app.stage.position.clone().setY(0), head);
+      this.placeStageAt(this.app.stage.position.clone().setY(this.room.geometry.floorY), head);
     }
     this.refreshPanel();
   }
@@ -443,6 +595,8 @@ export class XRExperience {
 
   private onSessionEnd(): void {
     this.companionPending = false;
+    this.shots.clear();
+    this.pads.clear();
     this.setCompanion(false);
     this.room.geometry = EMPTY_ROOM;
     this.roomCaptureUsed = false;
