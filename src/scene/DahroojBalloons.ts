@@ -29,37 +29,46 @@ interface Balloon {
   pos: THREE.Vector3;
 }
 
-function faceTexture(face: 'joy' | 'laugh'): THREE.CanvasTexture {
+/**
+ * Canvas texture that is upright on every browser: the drawing is flipped on
+ * the canvas and flipY is off, since some headsets ignore flipY for canvases.
+ */
+function uprightTexture(w: number, h: number, draw: (c: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 128;
+  canvas.width = w;
+  canvas.height = h;
   const c = canvas.getContext('2d')!;
-  c.translate(64, 64);
-  drawReferenceFace(c, 56, face, 0, 0, 0.9, false, 'jelly');
+  c.translate(0, h);
+  c.scale(1, -1);
+  draw(c);
   const tex = new THREE.CanvasTexture(canvas);
+  tex.flipY = false;
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
 
+function faceTexture(face: 'joy' | 'laugh'): THREE.CanvasTexture {
+  return uprightTexture(128, 128, (c) => {
+    c.translate(64, 64);
+    drawReferenceFace(c, 56, face, 0, 0, 0.9, false, 'jelly');
+  });
+}
+
 /** Glossy two-tone balloon skin (light top, deeper bottom, a highlight). */
 function skinTexture(light: string, dark: string): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 64;
-  const c = canvas.getContext('2d')!;
-  const g = c.createLinearGradient(0, 0, 0, 64);
-  g.addColorStop(0, light);
-  g.addColorStop(1, dark);
-  c.fillStyle = g;
-  c.fillRect(0, 0, 128, 64);
-  // Glint on the upper front-left (u ≈ 0.25 faces +Z, which turns to the viewer).
-  const h = c.createRadialGradient(26, 18, 0, 26, 18, 12);
-  h.addColorStop(0, 'rgba(255,255,255,0.9)');
-  h.addColorStop(1, 'rgba(255,255,255,0)');
-  c.fillStyle = h;
-  c.fillRect(0, 0, 128, 64);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  return uprightTexture(128, 64, (c) => {
+    const g = c.createLinearGradient(0, 0, 0, 64);
+    g.addColorStop(0, light);
+    g.addColorStop(1, dark);
+    c.fillStyle = g;
+    c.fillRect(0, 0, 128, 64);
+    // Glint on the upper front-left (u ≈ 0.25 faces +Z, which turns to the viewer).
+    const h = c.createRadialGradient(26, 18, 0, 26, 18, 12);
+    h.addColorStop(0, 'rgba(255,255,255,0.9)');
+    h.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = h;
+    c.fillRect(0, 0, 128, 64);
+  });
 }
 
 export class DahroojBalloons {

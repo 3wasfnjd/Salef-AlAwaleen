@@ -23,6 +23,8 @@ export interface RoomGeometry {
   walls: Segment[];
   /** Furniture footprints (tables, couches, beds…). */
   obstacles: P2[][];
+  /** Top of each obstacle above the floor (metres), same order; unknown = always blocks. */
+  obstacleHeights?: number[];
 }
 
 export const EMPTY_ROOM: RoomGeometry = { floorY: 0, floor: null, walls: [], obstacles: [] };
@@ -79,6 +81,28 @@ export class Room {
     return this.geometry.walls.length > 0 || this.geometry.floor !== null;
   }
 
+  /**
+   * The same room for something flying `height` metres above the floor: only
+   * walls and furniture taller than that matter, and no floor outline (so it
+   * keeps following when the player walks past the scanned area).
+   */
+  forFlight(height: number): Room {
+    const g = this.geometry;
+    const flight = new Room(this.radius);
+    flight.geometry = {
+      floorY: g.floorY,
+      floor: null,
+      walls: g.walls,
+      obstacles: g.obstacles.filter((_, i) => (g.obstacleHeights?.[i] ?? Infinity) > height),
+    };
+    return flight;
+  }
+
+  /** Distance from `p` to the nearest wall, furniture edge or floor edge. */
+  private clearance(p: P2): number {
+    return this.blockers().reduce((m, s) => Math.min(m, dist(p, closestOnSegment(p, s))), Infinity);
+  }
+
   private blockers(): Segment[] {
     const g = this.geometry;
     return [...g.walls, ...g.obstacles.flatMap(edges), ...(g.floor ? edges(g.floor) : [])];
@@ -105,6 +129,8 @@ export class Room {
   step(from: P2, to: P2): P2 {
     if (!this.known) return to;
     if (!this.crosses(from, to) && !this.isBlocked(to)) return to;
+    // Already too close to something: let it move away instead of freezing in place.
+    if (this.isBlocked(from) && !this.crosses(from, to) && this.clearance(to) >= this.clearance(from)) return to;
     const wall = this.blockers()
       .filter((s) => segmentsIntersect(from, to, s.a, s.b) || dist(to, closestOnSegment(to, s)) < this.radius)
       .sort((s1, s2) => dist(from, closestOnSegment(from, s1)) - dist(from, closestOnSegment(from, s2)))[0];
@@ -185,9 +211,14 @@ export function geometryFromPlanes(planes: Array<{ plane: PlaneLike; matrix: Arr
     horizontal.filter((h) => h.label === 'floor').sort((a, b) => a.y - b.y)[0] ??
     horizontal.filter((h) => h.label !== 'ceiling').sort((a, b) => a.y - b.y)[0];
   const floorY = floorPlane?.y ?? 0;
-  const obstacles = horizontal
+  const furniture = horizontal
     .filter((h) => h !== floorPlane && h.label !== 'ceiling' && h.label !== 'floor')
-    .filter((h) => FURNITURE.has(h.label) || (h.y - floorY > 0.15 && h.y - floorY < 1.6))
-    .map((h) => h.poly);
-  return { floorY, floor: floorPlane && floorPlane.poly.length >= 3 ? floorPlane.poly : null, walls, obstacles };
+    .filter((h) => FURNITURE.has(h.label) || (h.y - floorY > 0.15 && h.y - floorY < 1.6));
+  return {
+    floorY,
+    floor: floorPlane && floorPlane.poly.length >= 3 ? floorPlane.poly : null,
+    walls,
+    obstacles: furniture.map((h) => h.poly),
+    obstacleHeights: furniture.map((h) => h.y - floorY),
+  };
 }

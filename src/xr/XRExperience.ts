@@ -409,7 +409,9 @@ export class XRExperience {
       if (this.callbacks.motion() !== this.motion) this.startMotion(head, camera); // character switched
       if (this.motion === 'fly') {
         const look = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
-        this.flyer.update(dt, head, look, this.room);
+        // She flies over tables and couches; only walls and tall furniture are in her way.
+        const flight = this.room.forFlight(this.flyer.position.y - this.room.geometry.floorY - 0.1);
+        this.flyer.update(dt, head, look, flight);
         this.app.stage.position.copy(this.flyer.position);
         this.app.stage.rotation.set(0, this.flyer.yaw, 0);
         this.app.character?.setLocomotion(this.flyer.speed);

@@ -29,7 +29,7 @@ const DEFAULTS: FlyOptions = {
  * Flying companion for mixed reality: a small character that hovers and
  * roams in front of the player (a lazy figure-eight with a gentle bob), keeps
  * a comfortable distance from their face, always faces them, and stays out
- * of walls and furniture. Pure logic, unit-tested.
+ * of walls and tall furniture (pass `room.forFlight(height)`). Pure logic, unit-tested.
  */
 export class FlyCompanion {
   readonly position = new THREE.Vector3();
@@ -86,7 +86,21 @@ export class FlyCompanion {
     let goal = spot(theta, r0);
     if (room.known && (room.isBlocked(goal) || room.crosses(from, goal))) {
       // Try closer, then the other side, then closer on the other side.
-      const options = [spot(theta, r0 * 0.8), spot(-theta, r0), spot(-theta, r0 * 0.8), spot(0, o.minDistance + 0.1)];
+      // Last resort: come in close on whichever side she is now, so she never just waits behind.
+      const bearing = Math.atan2(this.position.x - head.x, this.position.z - head.z);
+      const near = o.minDistance + 0.1;
+      const beside = { x: head.x + Math.sin(bearing) * near, z: head.z + Math.cos(bearing) * near };
+      const options = [
+        spot(theta, r0 * 0.8),
+        spot(-theta, r0),
+        spot(-theta, r0 * 0.8),
+        spot(0, near),
+        spot(0.9, near),
+        spot(-0.9, near),
+        beside,
+        spot(Math.PI / 2, near),
+        spot(-Math.PI / 2, near),
+      ];
       const free = room.firstFree(options, from);
       if (free) goal = free;
       else goal = { x: this.position.x, z: this.position.z };

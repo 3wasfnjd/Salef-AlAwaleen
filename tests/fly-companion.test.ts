@@ -48,4 +48,70 @@ describe('FlyCompanion', () => {
       expect(f.position.z).toBeGreaterThan(-1.2); // never on/through the wall
     }
   });
+
+  it('follows the player walking across a furnished room and past the scanned floor', () => {
+    const room = new Room(0.2);
+    // 4 × 4 m scanned floor, a table (0.75 m) and a couch (0.45 m) in the way, walls far off.
+    room.geometry = {
+      floorY: 0,
+      floor: [
+        { x: -2, z: 2 },
+        { x: 2, z: 2 },
+        { x: 2, z: -2 },
+        { x: -2, z: -2 },
+      ],
+      walls: [{ a: { x: -6, z: -6 }, b: { x: 6, z: -6 } }],
+      obstacles: [
+        [
+          { x: -0.6, z: -0.8 },
+          { x: 0.6, z: -0.8 },
+          { x: 0.6, z: -1.6 },
+          { x: -0.6, z: -1.6 },
+        ],
+        [
+          { x: -1, z: -2.4 },
+          { x: 1, z: -2.4 },
+          { x: 1, z: -3.2 },
+          { x: -1, z: -3.2 },
+        ],
+      ],
+      obstacleHeights: [0.75, 0.45],
+    };
+    const f = new FlyCompanion();
+    const walker = head.clone();
+    f.reset(new THREE.Vector3(0, 1, -1.4), ahead);
+    // Walk 4 m forward (out of the scanned floor) at 0.6 m/s.
+    for (let t = 0; t < 12; t += dt) {
+      if (walker.z > -4) walker.z -= 0.6 * dt;
+      f.update(dt, walker, ahead, room.forFlight(f.position.y - 0.1));
+    }
+    expect(walker.z).toBeLessThanOrEqual(-4);
+    expect(f.position.z).toBeLessThan(walker.z - 0.5); // still in front of the player
+    expect(f.position.distanceTo(walker)).toBeLessThan(2.2);
+  });
+
+  it('flight room keeps walls and tall furniture only', () => {
+    const room = new Room(0.2);
+    const box = (x: number) => [
+      { x, z: 0 },
+      { x: x + 1, z: 0 },
+      { x: x + 1, z: 1 },
+      { x, z: 1 },
+    ];
+    room.geometry = { floorY: 0, floor: box(-5), walls: [{ a: { x: 0, z: 0 }, b: { x: 1, z: 0 } }], obstacles: [box(0), box(3)], obstacleHeights: [0.7, 1.8] };
+    const flight = room.forFlight(1);
+    expect(flight.geometry.floor).toBeNull();
+    expect(flight.geometry.walls).toHaveLength(1);
+    expect(flight.geometry.obstacles).toEqual([box(3)]);
+  });
+
+  it('never freezes when it ends up too close to a wall', () => {
+    const room = new Room(0.2);
+    room.geometry = { floorY: 0, floor: null, walls: [{ a: { x: -5, z: -1.5 }, b: { x: 5, z: -1.5 } }], obstacles: [] };
+    // Moving away from the wall is allowed even though it starts inside the margin.
+    const moved = room.step({ x: 0, z: -1.4 }, { x: 0, z: -1.3 });
+    expect(moved.z).toBeCloseTo(-1.3);
+    // Moving deeper toward it is not.
+    expect(room.step({ x: 0, z: -1.4 }, { x: 0, z: -1.45 }).z).toBeCloseTo(-1.4);
+  });
 });
