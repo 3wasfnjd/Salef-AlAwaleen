@@ -4,6 +4,7 @@ import type { Transcript, VoiceStatus } from '../core/voice';
 import { t, type MessageKey } from '../i18n';
 import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import type { SceneApp, ViewMode } from '../scene/SceneApp';
+import { Companion } from './Companion';
 import { XRPanel } from './XRPanel';
 
 export interface XRCapabilities {
@@ -50,6 +51,9 @@ export class XRExperience {
   private hint = '';
   private elapsed = 0;
   private voiceStatus: VoiceStatus = { kind: 'idle' };
+  /** "Walk with me" (MR only): the elder stands and walks beside the player. */
+  private companionOn = false;
+  private readonly companion = new Companion();
   /** Latest words of the elder, shown on the panel. */
   private caption = '';
 
@@ -154,6 +158,7 @@ export class XRExperience {
   }
 
   private applyMode(mode: ViewMode): void {
+    if (mode !== 'mr') this.setCompanion(false); // never walk around blind in VR
     this.app.setViewMode(mode);
     this.setPlacing(mode === 'mr');
     this.refreshPanel();
@@ -176,7 +181,8 @@ export class XRExperience {
       );
     }
     if (this.app.mode === 'vr') buttons.push({ id: 'env', label: t(`env.${this.app.environments.current}` as MessageKey) });
-    if (this.app.mode === 'mr') buttons.push({ id: 'place', label: t('btn.place') });
+    if (this.app.mode === 'mr' && !this.companionOn) buttons.push({ id: 'place', label: t('btn.place') });
+    if (this.app.mode === 'mr') buttons.push({ id: 'walk', label: this.companionOn ? t('companion.stop') : t('companion.start') });
     const voice = this.callbacks.conversation;
     if (voice.configured) {
       if (voice.active && voice.isSpeaking) buttons.push({ id: 'cut', label: t('talk.cut') });
@@ -190,6 +196,7 @@ export class XRExperience {
   private activate(id: string): void {
     if (id === 'mode') void this.setMode(this.app.mode === 'vr' ? 'mr' : 'vr');
     else if (id === 'place') this.setPlacing(true);
+    else if (id === 'walk') this.setCompanion(!this.companionOn);
     else if (id === 'env') {
       const next = ENVIRONMENTS[(ENVIRONMENTS.indexOf(this.app.environments.current) + 1) % ENVIRONMENTS.length];
       this.hint = t('env.loading');
@@ -270,6 +277,16 @@ export class XRExperience {
       this.hint = t('xr.placedManual');
     }
 
+    if (this.companionOn) {
+      const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+      this.companion.update(dt, head);
+      this.app.stage.position.copy(this.companion.position);
+      this.app.stage.rotation.set(0, this.companion.yaw, 0);
+      this.app.character?.setLocomotion(this.companion.speed);
+      // Keep the panel out of the way while he walks.
+      this.panel.mesh.visible = this.companion.speed < 0.1;
+    }
+
     // Hover feedback; A/X toggles VR/MR, B/Y cuts the elder off.
     let hovered: string | null = null;
     for (const c of this.controllers) hovered ??= this.panelHit(c);
@@ -294,6 +311,31 @@ export class XRExperience {
     this.panel.setInfo([this.hint || words, `${this.fps} fps`].filter(Boolean).join(' · '));
   }
 
+  private setCompanion(on: boolean): void {
+    if (on === this.companionOn) return;
+    this.companionOn = on;
+    const rig = this.app.character;
+    const camera = this.app.renderer.xr.getCamera();
+    const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+    if (on) {
+      this.setPlacing(false);
+      this.hint = t('companion.hint');
+      this.app.majlis.core.visible = false;
+      rig?.setPosture('standing');
+      const look = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+      this.companion.reset(this.app.stage.position, this.app.stage.rotation.y, head, look);
+    } else {
+      this.hint = '';
+      rig?.setLocomotion(0);
+      rig?.setPosture('seated');
+      this.app.majlis.core.visible = true;
+      this.panel.mesh.visible = this.session !== null;
+      // Sit down right where he is, facing the player.
+      this.placeStageAt(this.app.stage.position.clone().setY(0), head);
+    }
+    this.refreshPanel();
+  }
+
   /** Puts the elder ELDER_DISTANCE in front of the player, on the floor, facing them. */
   private placeInFrontOf(camera: THREE.Camera): void {
     const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
@@ -316,6 +358,7 @@ export class XRExperience {
   }
 
   private onSessionEnd(): void {
+    this.setCompanion(false);
     this.session = null;
     this.kind = null;
     this.hitTestSource = null;

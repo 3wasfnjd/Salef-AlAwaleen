@@ -53,5 +53,8 @@
   "interrupt.tap": "By button: if he keeps interrupting himself",
   "caption.you": "You",
   "caption.elder": "Abu Nasser",
-  "btn.options": "Options"
+  "btn.options": "Options",
+  "companion.start": "Walk with me",
+  "companion.stop": "Sit down",
+  "companion.hint": "Walk slowly in an open space; the headset may not know where walls and furniture are."
 }

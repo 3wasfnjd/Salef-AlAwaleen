@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { BehaviorState } from '../../core/behavior';
 import { MergedBuilder, box, cylinder, sphere } from '../builder';
 import { shemaghTexture } from '../textures';
-import type { CharacterRig, Expression, Gesture } from './CharacterRig';
+import type { CharacterRig, Expression, Gesture, Posture } from './CharacterRig';
 
 const SKIN = '#a8714c';
 const SKIN_DARK = '#8f5d3d';
@@ -257,6 +257,11 @@ export class ProceduralElder implements CharacterRig {
   setExpression(e: Expression): void {
     this.expression = e;
   }
+
+  // The primitive fallback is modelled seated only; it stays seated.
+  setPosture(_p: Posture): void {}
+
+  setLocomotion(_speed: number): void {}
 
   update(dt: number, time: number): void {
     const target = this.targetPose(time);

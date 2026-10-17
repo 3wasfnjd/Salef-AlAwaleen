@@ -53,5 +53,8 @@
   "interrupt.tap": "بالضغط: إذا صار يقاطع نفسه",
   "caption.you": "أنت",
   "caption.elder": "أبو ناصر",
-  "btn.options": "خيارات"
+  "btn.options": "خيارات",
+  "companion.start": "يمشي معي",
+  "companion.stop": "اجلس يا عم",
+  "companion.hint": "امشِ بهدوء في مكان مفتوح؛ النظارة قد لا تعرف مكان الجدران والأثاث."
 }

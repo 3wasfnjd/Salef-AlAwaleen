@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { BehaviorState } from '../../core/behavior';
 import { toStandard } from '../assets';
-import type { CharacterRig, Expression, Gesture } from './CharacterRig';
+import type { CharacterRig, Expression, Gesture, Posture } from './CharacterRig';
 
 /** Morph targets authored on the elder's Body mesh (Mafateeh `shaib.glb`). */
 type Morph =
@@ -22,8 +22,11 @@ type Morph =
  * The Mafateeh rig is authored at puzzle-game scale (seated head ≈ 0.53 m).
  * Scale to a believable seated adult and lift him onto the floor cushion.
  */
-const MODEL_SCALE = 1.5;
+const MODEL_SCALE = 1.65;
 const SEAT_HEIGHT = 0.1;
+/** Ground speed (m/s) at which the authored walk cycle plays at 1×. */
+const WALK_CLIP_SPEED = 1.0;
+const FADE = 0.35;
 
 const damp = (current: number, target: number, rate: number, dt: number) =>
   current + (target - current) * (1 - Math.exp(-rate * dt));
@@ -49,7 +52,10 @@ export class GlbElder implements CharacterRig {
   private readonly head?: THREE.Object3D;
   private readonly neck?: THREE.Object3D;
   private readonly eyes: THREE.Object3D[] = [];
-  private readonly baseAction?: THREE.AnimationAction;
+  private readonly model: THREE.Object3D;
+  private readonly actions: Partial<Record<'sit' | 'stand' | 'walk', THREE.AnimationAction>> = {};
+  private current?: THREE.AnimationAction;
+  private posture: Posture = 'seated';
 
   private state: BehaviorState = 'idle';
   private expression: Expression = 'neutral';
@@ -80,6 +86,7 @@ export class GlbElder implements CharacterRig {
 
   private constructor(model: THREE.Object3D, clips: THREE.AnimationClip[]) {
     this.object.name = 'glb-elder';
+    this.model = model;
     model.scale.setScalar(MODEL_SCALE);
     model.position.set(0, SEAT_HEIGHT, -0.02);
     this.object.add(model);
@@ -100,10 +107,38 @@ export class GlbElder implements CharacterRig {
     }
 
     this.mixer = new THREE.AnimationMixer(model);
-    const clip = THREE.AnimationClip.findByName(clips, 'sit_idle') ?? THREE.AnimationClip.findByName(clips, 'idle');
-    if (clip) {
-      this.baseAction = this.mixer.clipAction(clip);
-      this.baseAction.play();
+    const action = (name: string) => {
+      const clip = THREE.AnimationClip.findByName(clips, name);
+      return clip ? this.mixer.clipAction(clip) : undefined;
+    };
+    this.actions.sit = action('sit_idle') ?? action('idle');
+    this.actions.stand = action('idle');
+    this.actions.walk = action('walk');
+    this.play(this.actions.sit, 0);
+  }
+
+  private play(next: THREE.AnimationAction | undefined, fade = FADE): void {
+    if (!next || next === this.current) return;
+    next.reset().setEffectiveWeight(1).play();
+    if (this.current) this.current.crossFadeTo(next, fade, false);
+    this.current = next;
+  }
+
+  setPosture(p: Posture): void {
+    if (p === this.posture) return;
+    this.posture = p;
+    this.model.position.y = p === 'seated' ? SEAT_HEIGHT : 0;
+    this.play(p === 'seated' ? this.actions.sit : this.actions.stand);
+  }
+
+  setLocomotion(speed: number): void {
+    if (this.posture !== 'standing') return;
+    const walk = this.actions.walk;
+    if (speed > 0.08) {
+      this.play(walk, 0.25);
+      if (walk) walk.timeScale = THREE.MathUtils.clamp(speed / WALK_CLIP_SPEED, 0.5, 1.5);
+    } else {
+      this.play(this.actions.stand, 0.3);
     }
   }
 

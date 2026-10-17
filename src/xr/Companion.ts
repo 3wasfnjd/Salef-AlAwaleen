@@ -1,0 +1,120 @@
+import * as THREE from 'three';
+
+export interface CompanionOptions {
+  /** Where he walks relative to the player's walking direction (metres). */
+  side: number;
+  ahead: number;
+  /** Hysteresis: start walking beyond `start`, stop within `stop` of his spot. */
+  start: number;
+  stop: number;
+  maxSpeed: number;
+  accel: number;
+  /** Yaw follow rate (1/s). */
+  turnRate: number;
+  /** Never closer than this to the player's head (horizontal). */
+  personalSpace: number;
+  /** Player speed (m/s) above which their walking direction updates. */
+  headingSpeed: number;
+}
+
+const DEFAULTS: CompanionOptions = {
+  side: 0.75,
+  ahead: 0.25,
+  start: 0.5,
+  stop: 0.2,
+  maxSpeed: 1.2,
+  accel: 2.0,
+  turnRate: 5,
+  personalSpace: 0.55,
+  headingSpeed: 0.25,
+};
+
+/**
+ * "Walk with me" behaviour for mixed reality: the elder keeps a spot beside
+ * the player, following their walking direction (not every head turn), and
+ * stops and turns to face them when they stand still. Pure logic: feed it
+ * the player's head pose each frame; read position / yaw / speed back.
+ * Works on the floor plane (y = 0 in a local-floor reference space).
+ */
+export class Companion {
+  readonly position = new THREE.Vector3();
+  yaw = 0;
+  speed = 0;
+  private walking = false;
+  private readonly heading = new THREE.Vector3(0, 0, -1);
+  private readonly lastHead = new THREE.Vector3();
+  private hasLastHead = false;
+  private readonly opts: CompanionOptions;
+  private readonly tmp = new THREE.Vector3();
+  private readonly target = new THREE.Vector3();
+
+  constructor(options: Partial<CompanionOptions> = {}) {
+    this.opts = { ...DEFAULTS, ...options };
+  }
+
+  /** Start from the elder's current spot, walking direction = where the player looks. */
+  reset(position: THREE.Vector3, yaw: number, head: THREE.Vector3, lookForward: THREE.Vector3): void {
+    this.position.set(position.x, 0, position.z);
+    this.yaw = yaw;
+    this.speed = 0;
+    this.walking = false;
+    this.heading.set(lookForward.x, 0, lookForward.z);
+    if (this.heading.lengthSq() < 1e-6) this.heading.set(0, 0, -1);
+    this.heading.normalize();
+    this.lastHead.copy(head);
+    this.hasLastHead = true;
+  }
+
+  update(dt: number, head: THREE.Vector3): void {
+    if (dt <= 0) return;
+    const o = this.opts;
+    const floorHead = this.tmp.set(head.x, 0, head.z);
+
+    // Walking direction follows how the player moves, not where they glance.
+    if (this.hasLastHead) {
+      const dx = head.x - this.lastHead.x;
+      const dz = head.z - this.lastHead.z;
+      const v = Math.hypot(dx, dz) / dt;
+      if (v > o.headingSpeed) this.heading.lerp(new THREE.Vector3(dx, 0, dz).normalize(), Math.min(1, dt * 3)).normalize();
+    }
+    this.lastHead.copy(head);
+    this.hasLastHead = true;
+
+    // His spot: beside the player (to their right), slightly ahead.
+    const right = new THREE.Vector3(-this.heading.z, 0, this.heading.x);
+    this.target.copy(floorHead).addScaledVector(right, o.side).addScaledVector(this.heading, o.ahead);
+
+    const toTarget = new THREE.Vector3().subVectors(this.target, this.position);
+    const dist = toTarget.length();
+    this.walking = dist > (this.walking ? o.stop : o.start);
+    const desired = this.walking ? Math.min(o.maxSpeed, dist * 1.6 + 0.2) : 0;
+    const dv = THREE.MathUtils.clamp(desired - this.speed, -o.accel * dt * 2, o.accel * dt);
+    this.speed = Math.max(0, this.speed + dv);
+
+    let desiredYaw: number;
+    if (this.speed > 0.05 && dist > 1e-3) {
+      const step = Math.min(dist, this.speed * dt);
+      this.position.addScaledVector(toTarget.normalize(), step);
+      desiredYaw = Math.atan2(toTarget.x, toTarget.z);
+    } else {
+      desiredYaw = Math.atan2(floorHead.x - this.position.x, floorHead.z - this.position.z);
+    }
+
+    // Personal space.
+    const away = new THREE.Vector3().subVectors(this.position, floorHead);
+    const gap = away.length();
+    if (gap < o.personalSpace) {
+      if (gap < 1e-4) away.copy(right);
+      this.position.copy(floorHead).addScaledVector(away.normalize(), o.personalSpace);
+    }
+
+    this.yaw += shortestAngle(this.yaw, desiredYaw) * Math.min(1, dt * o.turnRate);
+  }
+}
+
+export function shortestAngle(from: number, to: number): number {
+  let d = (to - from) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
