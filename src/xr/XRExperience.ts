@@ -43,6 +43,8 @@ export class XRExperience {
   private placing = false;
   private placingSince = 0;
   private needsInitialPlacement = false;
+  /** Start walking together on the next frame (once the head pose is known). */
+  private companionPending = false;
   private reticleValid = false;
   private lastButtons = new Map<XRInputSource, boolean>();
   private lastCut = new Map<XRInputSource, boolean>();
@@ -164,10 +166,16 @@ export class XRExperience {
     void this.session?.end();
   }
 
+  /**
+   * MR = the player is up and moving around their room, so the character
+   * stands and walks along straight away ("Sit down" is still available).
+   * VR = seated in the majlis; never walk around blind.
+   */
   private applyMode(mode: ViewMode): void {
-    if (mode !== 'mr') this.setCompanion(false); // never walk around blind in VR
+    if (mode === 'mr') this.companionPending = true;
+    else this.setCompanion(false);
     this.app.setViewMode(mode);
-    this.setPlacing(mode === 'mr');
+    this.setPlacing(false);
     this.refreshPanel();
   }
 
@@ -272,6 +280,10 @@ export class XRExperience {
     if (this.needsInitialPlacement) {
       this.needsInitialPlacement = false;
       this.placeInFrontOf(camera);
+    }
+    if (this.companionPending) {
+      this.companionPending = false;
+      if (this.app.mode === 'mr') this.setCompanion(true);
     }
 
     // Floor reticle for MR placement.
@@ -430,6 +442,7 @@ export class XRExperience {
   }
 
   private onSessionEnd(): void {
+    this.companionPending = false;
     this.setCompanion(false);
     this.room.geometry = EMPTY_ROOM;
     this.roomCaptureUsed = false;

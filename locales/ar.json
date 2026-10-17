@@ -3,7 +3,7 @@
   "app.subtitle": "مجلس الشايب",
   "app.phaseNotice": "الشايب يتكلم بالذكاء الاصطناعي وقد يخطئ. صوتك يُرسل إلى Google Gemini أثناء الجلسة فقط ولا نحفظه.",
   "btn.enterVR": "ادخل المجلس (VR)",
-  "btn.enterMR": "الشايب في غرفتك (MR)",
+  "btn.enterMR": "تجوّل معه في غرفتك (MR)",
   "btn.switchToVR": "واقع افتراضي",
   "btn.switchToMR": "واقع مختلط",
   "btn.place": "إعادة وضع الشايب",

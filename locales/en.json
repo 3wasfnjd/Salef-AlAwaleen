@@ -3,7 +3,7 @@
   "app.subtitle": "The Elder's Majlis",
   "app.phaseNotice": "The elder's voice and words are AI-generated and may be wrong. Your voice is sent to Google Gemini during the session only and is not stored by us.",
   "btn.enterVR": "Enter the majlis (VR)",
-  "btn.enterMR": "Elder in your room (MR)",
+  "btn.enterMR": "Walk around your room together (MR)",
   "btn.switchToVR": "Virtual reality",
   "btn.switchToMR": "Mixed reality",
   "btn.place": "Reposition the elder",
