@@ -1,4 +1,5 @@
 import './ui/style.css';
+import { Conversation } from './conversation';
 import type { BehaviorState, ConversationEvent } from './core/behavior';
 import { t } from './i18n';
 import { ProceduralElder } from './scene/character/ProceduralElder';
@@ -49,10 +50,13 @@ async function boot(): Promise<void> {
   };
   void app.environments.show(savedEnvironment());
 
+  const conversation = new Conversation(app, import.meta.env.VITE_API_BASE || undefined);
+
   const caps = await XRExperience.capabilities();
   const xr = new XRExperience(app, caps, {
     onSessionEnd: () => document.body.classList.remove('in-xr'),
     setEnvironment,
+    conversation,
   });
 
   const overlay = new Overlay(ui, caps, {
@@ -63,6 +67,16 @@ async function boot(): Promise<void> {
     },
     setEnvironment: (id) => void setEnvironment(id),
     currentEnvironment: () => app.environments.current,
+    voice: {
+      configured: conversation.configured,
+      active: () => conversation.active,
+      toggle: () => conversation.toggle(),
+      interrupt: () => conversation.interrupt(),
+      getCode: () => conversation.accessCode,
+      setCode: (code) => (conversation.accessCode = code),
+      getMode: () => conversation.interruptMode,
+      setMode: (mode) => (conversation.interruptMode = mode),
+    },
     previewState: (state) => {
       const now = performance.now();
       app.behavior.dispatch({ type: 'reset' }, now);
@@ -70,8 +84,10 @@ async function boot(): Promise<void> {
     },
   });
 
+  conversation.addView(overlay);
+
   // Debug handle for automated render checks (?debug).
-  if (params.has('debug')) Object.assign(window, { __salef: app });
+  if (params.has('debug')) Object.assign(window, { __salef: app, __conversation: conversation });
 
   // The packaged Quest app (immersive mode) asks to enter XR straight away.
   // If the runtime still requires a user gesture, the buttons remain available.

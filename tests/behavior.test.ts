@@ -16,6 +16,12 @@ describe('BehaviorMachine', () => {
     expect(m.state).toBe('storytelling');
   });
 
+  it('upgrades a long reply from speaking to storytelling', () => {
+    const m = new BehaviorMachine();
+    m.dispatch({ type: 'responseStarted', story: false }, 0);
+    expect(m.dispatch({ type: 'responseStarted', story: true }, 8000)).toBe('storytelling');
+  });
+
   it('handles an interruption while storytelling, then listens', () => {
     const m = new BehaviorMachine();
     m.dispatch({ type: 'responseStarted', story: true }, 0);

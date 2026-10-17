@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { statusText, type Conversation } from '../conversation';
+import type { Transcript, VoiceStatus } from '../core/voice';
 import { t, type MessageKey } from '../i18n';
 import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import type { SceneApp, ViewMode } from '../scene/SceneApp';
@@ -12,6 +14,7 @@ export interface XRCapabilities {
 export interface XRCallbacks {
   onSessionEnd(): void;
   setEnvironment(id: EnvironmentId): Promise<void>;
+  conversation: Conversation;
 }
 
 const ELDER_DISTANCE = 1.5;
@@ -40,11 +43,15 @@ export class XRExperience {
   private needsInitialPlacement = false;
   private reticleValid = false;
   private lastButtons = new Map<XRInputSource, boolean>();
+  private lastCut = new Map<XRInputSource, boolean>();
   private frames = 0;
   private fpsWindowStart = 0;
   private fps = 0;
   private hint = '';
   private elapsed = 0;
+  private voiceStatus: VoiceStatus = { kind: 'idle' };
+  /** Latest words of the elder, shown on the panel. */
+  private caption = '';
 
   static async capabilities(): Promise<XRCapabilities> {
     const xr = navigator.xr;
@@ -76,6 +83,17 @@ export class XRExperience {
     app.stage.add(this.panel.mesh);
 
     this.setupControllers();
+    callbacks.conversation.addView({
+      status: (s: VoiceStatus) => {
+        this.voiceStatus = s;
+        if (s.kind === 'connecting') this.caption = '';
+        this.refreshPanel();
+      },
+      transcript: (tr: Transcript) => {
+        if (tr.role === 'character') this.caption = tr.text;
+      },
+      speakingChanged: () => this.refreshPanel(),
+    });
     app.onFrame((dt, _time, frame) => this.onFrame(dt, frame));
   }
 
@@ -159,9 +177,14 @@ export class XRExperience {
     }
     if (this.app.mode === 'vr') buttons.push({ id: 'env', label: t(`env.${this.app.environments.current}` as MessageKey) });
     if (this.app.mode === 'mr') buttons.push({ id: 'place', label: t('btn.place') });
+    const voice = this.callbacks.conversation;
+    if (voice.configured) {
+      if (voice.active && voice.isSpeaking) buttons.push({ id: 'cut', label: t('talk.cut') });
+      else buttons.push({ id: 'talk', label: voice.active ? t('talk.stop') : t('talk.start') });
+    }
     buttons.push({ id: 'exit', label: t('btn.exit') });
     this.panel.setButtons(buttons);
-    this.panel.setStatus(t('app.title'));
+    this.panel.setStatus(voice.configured && this.voiceStatus.kind !== 'idle' ? statusText(this.voiceStatus) : t('app.title'));
   }
 
   private activate(id: string): void {
@@ -176,6 +199,10 @@ export class XRExperience {
       });
       this.refreshPanel();
     }
+    else if (id === 'talk') {
+      this.callbacks.conversation.toggle();
+      this.refreshPanel();
+    } else if (id === 'cut') this.callbacks.conversation.interrupt();
     else if (id === 'exit') this.end();
   }
 
@@ -243,7 +270,7 @@ export class XRExperience {
       this.hint = t('xr.placedManual');
     }
 
-    // Hover feedback and A/X button to toggle VR/MR.
+    // Hover feedback; A/X toggles VR/MR, B/Y cuts the elder off.
     let hovered: string | null = null;
     for (const c of this.controllers) hovered ??= this.panelHit(c);
     this.panel.setHovered(hovered);
@@ -251,6 +278,9 @@ export class XRExperience {
       const pressed = Boolean(source.gamepad?.buttons[4]?.pressed);
       if (pressed && !this.lastButtons.get(source) && this.kind === 'ar') this.activate('mode');
       this.lastButtons.set(source, pressed);
+      const cut = Boolean(source.gamepad?.buttons[5]?.pressed);
+      if (cut && !this.lastCut.get(source)) this.callbacks.conversation.interrupt();
+      this.lastCut.set(source, cut);
     }
 
     // Frame-rate measurement shown on the panel (real numbers from the device).
@@ -260,7 +290,8 @@ export class XRExperience {
       this.frames = 0;
       this.fpsWindowStart = this.elapsed;
     }
-    this.panel.setInfo([this.hint, `${this.fps} fps`].filter(Boolean).join(' · '));
+    const words = this.caption.length > 70 ? `…${this.caption.slice(-70)}` : this.caption;
+    this.panel.setInfo([this.hint || words, `${this.fps} fps`].filter(Boolean).join(' · '));
   }
 
   /** Puts the elder ELDER_DISTANCE in front of the player, on the floor, facing them. */

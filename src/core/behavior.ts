@@ -30,7 +30,8 @@ const ALLOWED: Record<BehaviorState, ReadonlyArray<ConversationEvent['type']>> =
   idle: ['userStartedSpeaking', 'responseStarted', 'react', 'reset'],
   listening: ['userStoppedSpeaking', 'responseStarted', 'reset'],
   thinking: ['userStartedSpeaking', 'responseStarted', 'responseCancelled', 'reset'],
-  speaking: ['userStartedSpeaking', 'responseFinished', 'responseCancelled', 'reset'],
+  // responseStarted while speaking upgrades a long reply to storytelling.
+  speaking: ['userStartedSpeaking', 'responseStarted', 'responseFinished', 'responseCancelled', 'reset'],
   storytelling: ['userStartedSpeaking', 'responseFinished', 'responseCancelled', 'reset'],
   reacting: ['userStartedSpeaking', 'responseStarted', 'reset'],
   interrupted: ['userStoppedSpeaking', 'responseStarted', 'reset'],

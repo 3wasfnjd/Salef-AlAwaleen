@@ -7,6 +7,10 @@ name: Deploy web preview (GitHub Pages)
 on:
   push:
     branches: [main]
+  # Rebuild after the voice server deploys so the site picks up its URL.
+  workflow_run:
+    workflows: ['Deploy voice server (Cloudflare Worker)']
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +30,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - name: Locate the voice server URL
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          API_BASE_OVERRIDE: ${{ vars.API_BASE }}
+        run: |
+          API_BASE="$API_BASE_OVERRIDE"
+          if [ -z "$API_BASE" ] && [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            SUB="$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+              | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).result.subdomain||"")}catch{}})' || true)"
+            [ -n "$SUB" ] && API_BASE="https://salef-al-awaleen.$SUB.workers.dev"
+          fi
+          echo "VITE_API_BASE=$API_BASE" >> "$GITHUB_ENV"
+          echo "Voice server: ${API_BASE:-not configured}"
       - run: npm run build
       - name: Publish dist/ to gh-pages
         run: |

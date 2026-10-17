@@ -7,6 +7,8 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: true,
     chunkSizeWarningLimit: 900,
+    // Keep the AudioWorklet as a real file: data: URLs in addModule are not reliable on Safari.
+    assetsInlineLimit: (file: string) => (file.includes('worklet') ? false : undefined),
   },
   test: {
     environment: 'node',

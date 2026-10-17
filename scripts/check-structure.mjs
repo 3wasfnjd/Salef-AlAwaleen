@@ -18,6 +18,10 @@ const required = [
   'src/scene/character/CharacterRig.ts',
   'src/xr/XRExperience.ts',
   'android/twa-manifest.template.json',
+  'server/src/index.ts',
+  'server/wrangler.toml',
+  'persona/ar-najdi.md',
+  'src/voice/GeminiLiveSession.ts',
 ];
 const problems = required.filter((f) => !existsSync(f)).map((f) => `missing required file: ${f}`);
 
