@@ -19,7 +19,7 @@
   "maskableIconUrl": "__MASKABLE_ICON_URL__",
   "splashScreenFadeOutDuration": 300,
   "signingKey": { "path": "__KEYSTORE_PATH__", "alias": "salef" },
-  "appVersionName": "__VERSION_NAME__",
+  "appVersion": "__VERSION_NAME__",
   "appVersionCode": 0,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",

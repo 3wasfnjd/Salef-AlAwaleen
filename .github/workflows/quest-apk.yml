@@ -110,7 +110,9 @@ jobs:
           cat badging.txt
           grep -q "package: name='${PACKAGE_ID}'" badging.txt
           grep -q "android.permission.RECORD_AUDIO" badging.txt
-          grep -q "android.permission.INTERNET" badging.txt
+          # No INTERNET check: the Quest TWA template has the system browser load the
+          # site, so the APK itself correctly does not request network permission.
+          grep -q "versionName='$(node -p "require('./package.json').version")+${{ github.run_number }}'" badging.txt
           if [ "${{ matrix.mode }}" = "immersive" ]; then grep -q "com.oculus.intent.category.VR" manifest.txt; fi
           grep -q "horizonos.pwa.APP_MODE" manifest.txt
           "$BT/apksigner" verify --verbose --print-certs "$APK" | tee signature.txt

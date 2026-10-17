@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BehaviorMachine } from '../core/behavior';
 import type { CharacterRig } from './character/CharacterRig';
+import { GlbElder } from './character/GlbElder';
 import { ProceduralElder } from './character/ProceduralElder';
 import { createMajlis, type Majlis } from './majlis';
 
@@ -17,7 +18,7 @@ export class SceneApp {
   readonly camera: THREE.PerspectiveCamera;
   readonly stage = new THREE.Group();
   readonly majlis: Majlis;
-  readonly character: CharacterRig;
+  private rig: CharacterRig | null = null;
   readonly behavior = new BehaviorMachine();
   private readonly controls: OrbitControls;
   private readonly timer = new THREE.Timer();
@@ -43,9 +44,7 @@ export class SceneApp {
     this.stage.add(this.majlis.full, this.majlis.core);
     this.scene.add(this.majlis.lights);
 
-    this.character = new ProceduralElder();
-    this.stage.add(this.character.object);
-    this.behavior.on('change', ({ to }) => this.character.setState(to));
+    this.behavior.on('change', ({ to }) => this.rig?.setState(to));
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.set(0, 0.8, 0);
@@ -61,6 +60,35 @@ export class SceneApp {
 
     window.addEventListener('resize', () => this.resize(container));
     this.renderer.setAnimationLoop((timestamp, frame) => this.tick(timestamp, frame));
+  }
+
+  get character(): CharacterRig | null {
+    return this.rig;
+  }
+
+  /**
+   * Loads the rigged elder (GLB). If it cannot be loaded (network, old
+   * device), the procedural elder is used so the experience still works.
+   */
+  async loadCharacter(url: string): Promise<'glb' | 'procedural'> {
+    let kind: 'glb' | 'procedural' = 'glb';
+    let rig: CharacterRig;
+    try {
+      rig = await GlbElder.load(url);
+    } catch (err) {
+      console.warn('Elder model failed to load, using procedural fallback', err);
+      rig = new ProceduralElder();
+      kind = 'procedural';
+    }
+    this.setCharacter(rig);
+    return kind;
+  }
+
+  setCharacter(rig: CharacterRig): void {
+    this.rig?.dispose();
+    this.rig = rig;
+    rig.setState(this.behavior.state);
+    this.stage.add(rig.object);
   }
 
   /** Registers a callback that runs every frame (2D and XR). */
@@ -102,11 +130,11 @@ export class SceneApp {
     // The elder looks at the player's head (XR camera when presenting).
     const viewer = this.renderer.xr.isPresenting ? this.renderer.xr.getCamera() : this.camera;
     viewer.getWorldPosition(this.headWorld);
-    this.character.lookAt(this.headWorld);
+    this.rig?.lookAt(this.headWorld);
 
     this.behavior.update(performance.now());
     for (const hook of this.frameHooks) hook(dt, time, frame);
-    this.character.update(dt, time);
+    this.rig?.update(dt, time);
     this.renderer.render(this.scene, this.camera);
   }
 }

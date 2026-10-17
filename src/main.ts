@@ -1,6 +1,7 @@
 import './ui/style.css';
 import type { BehaviorState, ConversationEvent } from './core/behavior';
 import { t } from './i18n';
+import { ProceduralElder } from './scene/character/ProceduralElder';
 import { SceneApp } from './scene/SceneApp';
 import { Overlay } from './ui/Overlay';
 import { XRExperience } from './xr/XRExperience';
@@ -22,6 +23,9 @@ async function boot(): Promise<void> {
   if (!stage || !ui) throw new Error('Missing #stage or #ui');
 
   const app = new SceneApp(stage);
+  const params = new URLSearchParams(location.search);
+  if (params.get('character') === 'procedural') app.setCharacter(new ProceduralElder());
+  else void app.loadCharacter(new URL('models/shaib.glb', document.baseURI).href);
   const caps = await XRExperience.capabilities();
   const xr = new XRExperience(app, caps, {
     onSessionEnd: () => document.body.classList.remove('in-xr'),
@@ -41,7 +45,6 @@ async function boot(): Promise<void> {
   });
 
   // Debug handle for automated render checks (?debug).
-  const params = new URLSearchParams(location.search);
   if (params.has('debug')) Object.assign(window, { __salef: app });
 
   // The packaged Quest app (immersive mode) asks to enter XR straight away.
