@@ -5,6 +5,12 @@ import { GeminiLiveSession } from './voice/GeminiLiveSession';
 
 const CODE_KEY = 'salef.accessCode';
 const MODE_KEY = 'salef.interruptMode';
+const VOICE_KEY = 'salef.voice';
+const TONE_KEY = 'salef.elderTone';
+
+/** Male prebuilt Gemini voices offered to the owner (must match VOICE_CHOICES on the server). */
+export const VOICES = ['Algenib', 'Charon', 'Sadaltager', 'Enceladus', 'Orus', 'Iapetus', 'Schedar', 'Umbriel'] as const;
+export type VoiceName = (typeof VOICES)[number];
 
 /** Localised text for a voice status. */
 export function statusText(s: VoiceStatus): string {
@@ -73,7 +79,13 @@ export class Conversation {
   /** Must run inside a user gesture (click / XR select). */
   start(): void {
     if (this.session || !this.apiBase) return;
-    const session = new GeminiLiveSession({ apiBase: this.apiBase, accessCode: this.accessCode, interruptMode: this.interruptMode });
+    const session = new GeminiLiveSession({
+      apiBase: this.apiBase,
+      accessCode: this.accessCode,
+      interruptMode: this.interruptMode,
+      voice: this.voice,
+      elderTone: this.elderTone,
+    });
     this.session = session;
     session.onEvent((e) => this.app.behavior.dispatch(e, performance.now()));
     session.onTranscript((t) => this.views.forEach((v) => v.transcript(t)));
@@ -117,6 +129,25 @@ export class Conversation {
   set interruptMode(mode: InterruptMode) {
     write(MODE_KEY, mode);
     this.session?.setInterruptMode(mode);
+  }
+
+  get voice(): VoiceName {
+    const v = read(VOICE_KEY);
+    return (VOICES as readonly string[]).includes(v ?? '') ? (v as VoiceName) : 'Algenib';
+  }
+
+  /** Takes effect from the next session (the voice is locked into each session's token). */
+  set voice(v: VoiceName) {
+    write(VOICE_KEY, v);
+  }
+
+  get elderTone(): boolean {
+    return read(TONE_KEY) !== 'off';
+  }
+
+  set elderTone(on: boolean) {
+    write(TONE_KEY, on ? 'on' : 'off');
+    this.session?.setElderTone(on);
   }
 }
 

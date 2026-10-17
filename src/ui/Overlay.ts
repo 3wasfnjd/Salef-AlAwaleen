@@ -1,6 +1,6 @@
 import type { BehaviorState } from '../core/behavior';
 import type { InterruptMode, Transcript, VoiceStatus } from '../core/voice';
-import { statusText, type ConversationView } from '../conversation';
+import { VOICES, statusText, type ConversationView, type VoiceName } from '../conversation';
 import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import { isRtl, locale, setLocale, t, type MessageKey } from '../i18n';
 import type { XRCapabilities } from '../xr/XRExperience';
@@ -19,6 +19,10 @@ export interface OverlayActions {
     setCode(code: string): void;
     getMode(): InterruptMode;
     setMode(mode: InterruptMode): void;
+    getVoice(): VoiceName;
+    setVoice(v: VoiceName): void;
+    getTone(): boolean;
+    setTone(on: boolean): void;
   };
 }
 
@@ -147,6 +151,13 @@ export class Overlay implements ConversationView {
         codeLabel,
         this.select(t('settings.interrupt'), [['auto', t('interrupt.auto')], ['tap', t('interrupt.tap')]], voice.getMode(), (v) =>
           voice.setMode(v as InterruptMode),
+        ),
+        this.select(t('settings.voice'), VOICES.map((v) => [v, t(`voice.${v}` as MessageKey)]), voice.getVoice(), (v) =>
+          voice.setVoice(v as VoiceName),
+        ),
+        el('p', 'hint', t('settings.voiceNote')),
+        this.select(t('settings.tone'), [['on', t('tone.on')], ['off', t('tone.off')]], voice.getTone() ? 'on' : 'off', (v) =>
+          voice.setTone(v === 'on'),
         ),
         el('p', 'hint', t('talk.hint')),
       );

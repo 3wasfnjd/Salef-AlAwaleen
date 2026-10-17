@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RateLimiter, allowedOrigin, buildLiveSetup, checkAccessCode, fieldMask, tokenRequestBody } from '../server/src/logic';
+import { RateLimiter, allowedOrigin, buildLiveSetup, checkAccessCode, fieldMask, pickVoice, tokenRequestBody } from '../server/src/logic';
 
 describe('token server logic', () => {
   const setup = buildLiveSetup({ model: 'gemini-3.1-flash-live-preview', voice: 'Algenib', persona: 'أنت أبو ناصر' });
@@ -34,6 +34,13 @@ describe('token server logic', () => {
     expect(checkAccessCode('', 'majlis-2026')).toBe(false);
     expect(checkAccessCode('x', undefined)).toBe(false);
     expect(checkAccessCode(42, 'x')).toBe(false);
+  });
+
+  it('only accepts voices from the allow-list', () => {
+    expect(pickVoice('Charon', 'Algenib,Charon', 'Algenib')).toBe('Charon');
+    expect(pickVoice('Kore', 'Algenib,Charon', 'Algenib')).toBe('Algenib');
+    expect(pickVoice(undefined, 'Algenib,Charon', 'Algenib')).toBe('Algenib');
+    expect(pickVoice({ x: 1 }, 'Algenib', 'Algenib')).toBe('Algenib');
   });
 
   it('only allows listed origins', () => {

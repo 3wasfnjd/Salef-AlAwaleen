@@ -10,6 +10,10 @@ export interface GeminiLiveOptions {
   /** Invite code checked by the token server. */
   accessCode: string;
   interruptMode: InterruptMode;
+  /** Prebuilt voice name; the server only accepts voices on its allow-list. */
+  voice?: string;
+  /** Slightly slower, lower, warmer playback. */
+  elderTone: boolean;
 }
 
 interface TokenResponse {
@@ -95,6 +99,11 @@ export class GeminiLiveSession implements VoiceSession {
     this.mode = mode;
   }
 
+  setElderTone(on: boolean): void {
+    this.options.elderTone = on;
+    this.player?.setElderTone(on);
+  }
+
   async start(): Promise<void> {
     // Create and resume the AudioContext synchronously inside the user gesture (iOS).
     const ctx = new AudioContext();
@@ -139,7 +148,7 @@ export class GeminiLiveSession implements VoiceSession {
       throw new VoiceError(name === 'NotAllowedError' || name === 'SecurityError' ? 'mic_denied' : 'mic_unavailable');
     }
 
-    this.player = new AudioPlayer(ctx);
+    this.player = new AudioPlayer(ctx, this.options.elderTone);
     const isAppleWebKit = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
     await this.player.connectOutput(!isAppleWebKit);
 
@@ -189,7 +198,7 @@ export class GeminiLiveSession implements VoiceSession {
       res = await fetch(`${this.options.apiBase.replace(/\/$/, '')}/v1/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: this.options.accessCode }),
+        body: JSON.stringify({ code: this.options.accessCode, voice: this.options.voice }),
       });
     } catch {
       throw new VoiceError('server_unreachable');

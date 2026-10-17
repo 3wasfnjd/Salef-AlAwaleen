@@ -10,8 +10,18 @@ import { rms } from './pcm';
  * loopback into an <audio> element. Safari/iOS uses the system voice
  * processing for all output, so it plays directly.
  */
+/**
+ * "Elder tone": a slightly slower, lower playback (≈8%) plus a warmer EQ
+ * (more low end, softer highs). Not a voice clone; a light age cue on top
+ * of the provider's prebuilt voice.
+ */
+const ELDER_RATE = 0.92;
+
 export class AudioPlayer {
   private readonly gain: GainNode;
+  private readonly low: BiquadFilterNode;
+  private readonly high: BiquadFilterNode;
+  private rate = 1;
   private readonly analyser: AnalyserNode;
   private readonly levelBuf: Float32Array<ArrayBuffer>;
   private readonly sources = new Set<AudioBufferSourceNode>();
@@ -19,12 +29,29 @@ export class AudioPlayer {
   private drainedCallbacks: Array<() => void> = [];
   private loopback: { pcs: RTCPeerConnection[]; el: HTMLAudioElement } | null = null;
 
-  constructor(private readonly ctx: AudioContext) {
+  constructor(
+    private readonly ctx: AudioContext,
+    elderTone = true,
+  ) {
+    this.low = ctx.createBiquadFilter();
+    this.low.type = 'lowshelf';
+    this.low.frequency.value = 220;
+    this.high = ctx.createBiquadFilter();
+    this.high.type = 'highshelf';
+    this.high.frequency.value = 4500;
     this.gain = ctx.createGain();
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 512;
     this.levelBuf = new Float32Array(this.analyser.fftSize);
+    this.low.connect(this.high).connect(this.gain);
     this.gain.connect(this.analyser);
+    this.setElderTone(elderTone);
+  }
+
+  setElderTone(on: boolean): void {
+    this.rate = on ? ELDER_RATE : 1;
+    this.low.gain.value = on ? 4 : 0;
+    this.high.gain.value = on ? -5 : 0;
   }
 
   /** Connects the output, via the WebRTC loopback where it helps echo cancellation. */
@@ -50,16 +77,18 @@ export class AudioPlayer {
     buffer.copyToChannel(samples, 0);
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
-    src.connect(this.gain);
+    src.playbackRate.value = this.rate;
+    src.connect(this.low);
     const startAt = Math.max(this.ctx.currentTime + 0.03, this.playhead);
     src.start(startAt);
-    this.playhead = startAt + buffer.duration;
+    const duration = buffer.duration / this.rate;
+    this.playhead = startAt + duration;
     this.sources.add(src);
     src.onended = () => {
       this.sources.delete(src);
       if (this.sources.size === 0) this.flushDrained();
     };
-    return buffer.duration;
+    return duration;
   }
 
   /** Runs `fn` once everything queued so far has finished playing. */
@@ -92,6 +121,8 @@ export class AudioPlayer {
 
   dispose(): void {
     this.stop();
+    this.low.disconnect();
+    this.high.disconnect();
     this.gain.disconnect();
     if (this.loopback) {
       this.loopback.pcs.forEach((pc) => pc.close());

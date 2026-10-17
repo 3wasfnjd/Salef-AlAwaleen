@@ -56,6 +56,13 @@ export function tokenRequestBody(setup: Record<string, unknown>, now: Date): Rec
   };
 }
 
+/** A voice the client asked for, if it is on the server's allow-list; otherwise the default. */
+export function pickVoice(requested: unknown, allowedCsv: string, fallback: string): string {
+  if (typeof requested !== 'string') return fallback;
+  const allowed = allowedCsv.split(',').map((v) => v.trim()).filter(Boolean);
+  return allowed.includes(requested) ? requested : fallback;
+}
+
 /** Constant-time check of an invite code against a comma-separated list. */
 export function checkAccessCode(code: unknown, codesCsv: string | undefined): boolean {
   if (typeof code !== 'string' || !codesCsv) return false;

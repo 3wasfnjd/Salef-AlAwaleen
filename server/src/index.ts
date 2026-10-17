@@ -6,6 +6,7 @@ import {
   allowedOrigin,
   buildLiveSetup,
   checkAccessCode,
+  pickVoice,
   tokenRequestBody,
 } from './logic';
 
@@ -21,6 +22,8 @@ interface Env {
   ALLOWED_ORIGINS: string;
   GEMINI_LIVE_MODEL: string;
   GEMINI_VOICE: string;
+  /** Comma-separated prebuilt voices the app may choose from. */
+  VOICE_CHOICES: string;
 }
 
 const perMinute = new RateLimiter(6, 60_000);
@@ -43,13 +46,21 @@ export default {
       new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...cors } });
 
     if (request.method === 'OPTIONS') return new Response(null, { status: origin ? 204 : 403, headers: cors });
-    if (url.pathname === '/health') return json({ ok: true, model: env.GEMINI_LIVE_MODEL, configured: Boolean(env.GEMINI_API_KEY) });
+    if (url.pathname === '/health') {
+      return json({
+        ok: true,
+        model: env.GEMINI_LIVE_MODEL,
+        voices: (env.VOICE_CHOICES ?? '').split(',').filter(Boolean),
+        configured: Boolean(env.GEMINI_API_KEY),
+      });
+    }
     if (url.pathname !== '/v1/session' || request.method !== 'POST') return json({ error: 'not_found' }, 404);
     if (!origin) return json({ error: 'origin_not_allowed' }, 403);
 
     let code: unknown;
+    let requestedVoice: unknown;
     try {
-      code = ((await request.json()) as { code?: unknown }).code;
+      ({ code, voice: requestedVoice } = (await request.json()) as { code?: unknown; voice?: unknown });
     } catch {
       return json({ error: 'bad_request' }, 400);
     }
@@ -60,7 +71,8 @@ export default {
     if (!perMinute.allow(ip, now) || !perDay.allow(ip, now)) return json({ error: 'rate_limited' }, 429);
     if (!env.GEMINI_API_KEY) return json({ error: 'server_not_configured' }, 503);
 
-    const setup = buildLiveSetup({ model: env.GEMINI_LIVE_MODEL, voice: env.GEMINI_VOICE, persona });
+    const voice = pickVoice(requestedVoice, env.VOICE_CHOICES ?? '', env.GEMINI_VOICE);
+    const setup = buildLiveSetup({ model: env.GEMINI_LIVE_MODEL, voice, persona });
     const upstream = await fetch(`${GEMINI_API}/v1alpha/auth_tokens`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
@@ -73,6 +85,6 @@ export default {
     }
     const token = (await upstream.json()) as { name?: string };
     if (!token.name) return json({ error: 'upstream_error' }, 502);
-    return json({ token: token.name, model: setup.model, wsUrl: LIVE_WS_URL });
+    return json({ token: token.name, model: setup.model, voice, wsUrl: LIVE_WS_URL });
   },
 };

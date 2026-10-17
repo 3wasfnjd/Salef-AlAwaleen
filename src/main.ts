@@ -76,6 +76,10 @@ async function boot(): Promise<void> {
       setCode: (code) => (conversation.accessCode = code),
       getMode: () => conversation.interruptMode,
       setMode: (mode) => (conversation.interruptMode = mode),
+      getVoice: () => conversation.voice,
+      setVoice: (v) => (conversation.voice = v),
+      getTone: () => conversation.elderTone,
+      setTone: (on) => (conversation.elderTone = on),
     },
     previewState: (state) => {
       const now = performance.now();

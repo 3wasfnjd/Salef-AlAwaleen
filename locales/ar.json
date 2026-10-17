@@ -56,5 +56,18 @@
   "btn.options": "خيارات",
   "companion.start": "يمشي معي",
   "companion.stop": "اجلس يا عم",
-  "companion.hint": "امشِ بهدوء في مكان مفتوح؛ النظارة قد لا تعرف مكان الجدران والأثاث."
+  "companion.hint": "امشِ بهدوء في مكان مفتوح؛ النظارة قد لا تعرف مكان الجدران والأثاث.",
+  "settings.voice": "صوت الشايب",
+  "settings.voiceNote": "يتغيّر الصوت من الجلسة القادمة.",
+  "settings.tone": "نبرة كبير السن",
+  "tone.on": "مفعّلة (أعمق وأهدأ)",
+  "tone.off": "بدون",
+  "voice.Algenib": "Algenib — أجش فيه بحّة",
+  "voice.Charon": "Charon — رزين",
+  "voice.Sadaltager": "Sadaltager — حكيم",
+  "voice.Enceladus": "Enceladus — فيه نَفَس",
+  "voice.Orus": "Orus — حازم",
+  "voice.Iapetus": "Iapetus — واضح",
+  "voice.Schedar": "Schedar — هادي",
+  "voice.Umbriel": "Umbriel — مرتاح"
 }
