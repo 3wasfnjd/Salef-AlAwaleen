@@ -39,6 +39,8 @@ export interface ShotWorld {
   crosses(a: P2, b: P2): boolean;
   /** Character centre in world space (for hits), or null. */
   target(): THREE.Vector3 | null;
+  /** Pops a balloon the shot touches; returns its colour (for the burst) or null. */
+  popAt?(p: THREE.Vector3, radius: number): THREE.Color | null;
 }
 
 export interface ShotEvents {
@@ -308,8 +310,14 @@ export class CelebrationShots {
       }
       s.p.addScaledVector(s.v, dt);
       let done = false;
+      const popped = this.world.popAt?.(s.p, spec.r);
 
-      if (target && s.p.distanceTo(target) < 0.22 + spec.r) {
+      if (popped) {
+        this.burst(s.p, popped.getHex(), 14, 1.1);
+        this.events.sound('pop', s.p);
+        this.shots.splice(i, 1);
+        continue;
+      } else if (target && s.p.distanceTo(target) < 0.22 + spec.r) {
         this.events.hitCharacter(s.kind);
         done = true;
       } else if (this.world.crosses(a, { x: s.p.x, z: s.p.z })) {

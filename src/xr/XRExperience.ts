@@ -5,6 +5,7 @@ import { t, type MessageKey } from '../i18n';
 import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import type { SceneApp, ViewMode } from '../scene/SceneApp';
 import { CelebrationShots, SHOT_KINDS, type ShotKind } from './CelebrationShots';
+import { DahroojBalloons } from '../scene/DahroojBalloons';
 import { Companion } from './Companion';
 import { Sfx } from './sfx';
 import { FlyCompanion } from './FlyCompanion';
@@ -55,6 +56,8 @@ export class XRExperience {
   private readonly pads = new Map<XRInputSource, { trigger: boolean; stick: boolean; a: boolean; b: boolean; consumed: boolean }>();
   private readonly sourceController = new Map<XRInputSource, THREE.Group>();
   private readonly shots: CelebrationShots;
+  /** «حمى الدحاريج»: Dahrooj balls floating like balloons around Nawwara. */
+  private readonly balloons = new DahroojBalloons();
   private shotKind: ShotKind = 'bubble';
   private readonly shotLabel: THREE.Sprite;
   private shotLabelUntil = 0;
@@ -67,6 +70,7 @@ export class XRExperience {
   private voiceStatus: VoiceStatus = { kind: 'idle' };
   /** "Walk with me" (MR only): the elder stands and walks beside the player. */
   private companionOn = false;
+  referenceSpace: XRReferenceSpaceType = 'local-floor';
   private readonly companion = new Companion();
   private readonly flyer = new FlyCompanion();
   private motion: 'walk' | 'fly' = 'walk';
@@ -116,6 +120,7 @@ export class XRExperience {
           return room.geometry.floorY;
         },
         crosses: (a, b) => this.room.known && this.room.crosses(a, b),
+        popAt: (p, r) => (this.balloons.group.visible ? this.balloons.hit(p, r) : null),
         target: () => {
           const rig = this.app.character?.object;
           if (!rig || !rig.visible) return null;
@@ -128,6 +133,8 @@ export class XRExperience {
       },
     );
     app.scene.add(this.shots.group);
+    this.balloons.group.visible = false;
+    app.scene.add(this.balloons.group);
     this.shotLabel = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false }));
     this.shotLabel.scale.set(0.16, 0.05, 1);
     this.shotLabel.visible = false;
@@ -161,9 +168,10 @@ export class XRExperience {
     this.sfx ??= new Sfx(); // created inside the click that enters XR, so it may play
     let session: XRSession;
     if (this.caps.ar) {
+      // 'unbounded' turns off Quest's stationary boundary circle so the player can walk the whole room.
       session = await xr.requestSession('immersive-ar', {
-        requiredFeatures: ['local-floor'],
-        optionalFeatures: ['hit-test', 'hand-tracking', 'plane-detection', 'anchors'],
+        requiredFeatures: [],
+        optionalFeatures: ['unbounded', 'local-floor', 'hit-test', 'hand-tracking', 'plane-detection', 'anchors'],
       });
       this.kind = 'ar';
     } else if (mode === 'vr' && this.caps.vr) {
@@ -178,6 +186,7 @@ export class XRExperience {
 
     this.session = session;
     session.addEventListener('end', () => this.onSessionEnd());
+    this.app.renderer.xr.setReferenceSpaceType(this.referenceSpaceFor(session));
     await this.app.renderer.xr.setSession(session);
     this.preferFrameRate(session, 72);
 
@@ -453,6 +462,12 @@ export class XRExperience {
       if (now.b && !was.b) this.callbacks.conversation.interrupt();
       this.pads.set(source, { ...now, consumed: now.trigger && consumed });
     }
+    const fairy = this.companionOn && this.motion === 'fly' && this.app.character?.object.visible;
+    this.balloons.group.visible = Boolean(fairy);
+    if (fairy) {
+      const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+      this.balloons.update(dt, this.app.character!.object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.2, 0)), head);
+    }
     this.shots.update(dt);
     if (this.shotLabel.visible && this.elapsed > this.shotLabelUntil) this.shotLabel.visible = false;
 
@@ -588,6 +603,13 @@ export class XRExperience {
     this.app.stage.rotation.set(0, Math.atan2(head.x - point.x, head.z - point.z), 0);
   }
 
+  /** Room-scale 'unbounded' when the headset grants it; otherwise 'local-floor'. */
+  private referenceSpaceFor(session: XRSession): XRReferenceSpaceType {
+    const enabled = (session as XRSession & { enabledFeatures?: readonly string[] }).enabledFeatures;
+    this.referenceSpace = enabled?.includes('unbounded') ? 'unbounded' : 'local-floor';
+    return this.referenceSpace;
+  }
+
   private preferFrameRate(session: XRSession, hz: number): void {
     const rates = session.supportedFrameRates;
     if (rates && Array.from(rates).includes(hz)) void session.updateTargetFrameRate?.(hz).catch(() => undefined);
@@ -596,6 +618,7 @@ export class XRExperience {
   private onSessionEnd(): void {
     this.companionPending = false;
     this.shots.clear();
+    this.balloons.group.visible = false;
     this.pads.clear();
     this.setCompanion(false);
     this.room.geometry = EMPTY_ROOM;
