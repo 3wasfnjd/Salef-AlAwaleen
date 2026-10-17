@@ -1,0 +1,131 @@
+name: Build Quest APK
+
+# Packages the web app as a Meta Quest PWA APK with Meta's official Bubblewrap
+# fork, then verifies the APK (package, permissions, Quest launcher category,
+# signature) before uploading it as a downloadable artifact.
+#
+# Signing: if the repository secrets QUEST_KEYSTORE_BASE64 and
+# QUEST_KEYSTORE_PASSWORD exist they are used (stable signature, so updates
+# install over the previous version). Otherwise a throw-away debug key is
+# generated for this run only. No key is ever committed.
+on:
+  push:
+    branches: [main, 'dev/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [immersive, 2D]
+    env:
+      BUBBLEWRAP_VERSION: 1.24.1
+      PACKAGE_ID: com.abodengames.salefalawaleen
+      WORK: ${{ github.workspace }}/android/build-project
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Meta Quest Bubblewrap CLI
+        run: npm install -g "@meta-quest/bubblewrap-cli@${BUBBLEWRAP_VERSION}" --no-audit --no-fund
+
+      - name: Configure Bubblewrap (JDK 17 + runner Android SDK)
+        run: |
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
+          cat ~/.bubblewrap/config.json
+
+      - name: Install Android platform 32 (required by the Quest template)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-32" > /dev/null
+
+      - name: Serve icons and web manifest locally
+        run: |
+          nohup python3 -m http.server 8080 --directory public > /tmp/http.log 2>&1 &
+          for i in $(seq 1 20); do curl -sf http://localhost:8080/manifest.webmanifest > /dev/null && break; sleep 0.5; done
+          curl -sf -o /dev/null http://localhost:8080/icons/icon-512.png
+
+      - name: Prepare signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.QUEST_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.QUEST_KEYSTORE_PASSWORD }}
+        run: |
+          KS="$RUNNER_TEMP/salef.keystore"
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$KS"
+            PASS="$KEYSTORE_PASSWORD"
+            echo "SIGNING=repository secret" >> "$GITHUB_ENV"
+          else
+            PASS="$(openssl rand -hex 16)"
+            keytool -genkeypair -keystore "$KS" -alias salef -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=Salef Al-Awaleen Debug, O=Aboden Games" -noprompt
+            echo "SIGNING=temporary debug key (this run only)" >> "$GITHUB_ENV"
+          fi
+          echo "::add-mask::$PASS"
+          echo "BUBBLEWRAP_KEYSTORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "BUBBLEWRAP_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PATH=$KS" >> "$GITHUB_ENV"
+
+      - name: Generate Android project
+        run: |
+          node scripts/make-twa-manifest.mjs "$WORK" "${{ matrix.mode }}" "${{ github.run_number }}" http://localhost:8080 "$KEYSTORE_PATH"
+          cd "$WORK"
+          bubblewrap update --skipVersionUpgrade
+
+      - name: Build and sign APK
+        run: |
+          cd "$WORK"
+          bubblewrap build --skipPwaValidation
+          ls -la
+
+      - name: Verify APK
+        run: |
+          set -euo pipefail
+          APK="$WORK/app-release-signed.apk"
+          test -s "$APK"
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$BT/aapt2" dump badging "$APK" > badging.txt
+          "$BT/aapt2" dump xmltree "$APK" --file AndroidManifest.xml > manifest.txt
+          cat badging.txt
+          grep -q "package: name='${PACKAGE_ID}'" badging.txt
+          grep -q "android.permission.RECORD_AUDIO" badging.txt
+          grep -q "android.permission.INTERNET" badging.txt
+          if [ "${{ matrix.mode }}" = "immersive" ]; then grep -q "com.oculus.intent.category.VR" manifest.txt; fi
+          grep -q "horizonos.pwa.APP_MODE" manifest.txt
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee signature.txt
+          unzip -tq "$APK"
+          OUT="salef-al-awaleen-quest-${{ matrix.mode }}-${{ github.run_number }}.apk"
+          cp "$APK" "$OUT"
+          sha256sum "$OUT" | tee "$OUT.sha256"
+          echo "APK_FILE=$OUT" >> "$GITHUB_ENV"
+          {
+            echo "### Quest APK (${{ matrix.mode }})"
+            echo "- File: \`$OUT\` ($(du -h "$OUT" | cut -f1))"
+            echo "- SHA-256: \`$(cut -d' ' -f1 "$OUT.sha256")\`"
+            echo "- Signing: $SIGNING"
+            echo "- $(grep -o "package: name='[^']*' versionCode='[^']*' versionName='[^']*'" badging.txt)"
+            echo "- Download: Artifacts section of this run"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: salef-quest-${{ matrix.mode }}-apk
+          path: |
+            ${{ env.APK_FILE }}
+            ${{ env.APK_FILE }}.sha256
+            badging.txt
+            signature.txt
+          if-no-files-found: error
+          retention-days: 30
