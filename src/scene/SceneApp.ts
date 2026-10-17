@@ -4,13 +4,15 @@ import { BehaviorMachine } from '../core/behavior';
 import type { CharacterRig } from './character/CharacterRig';
 import { GlbElder } from './character/GlbElder';
 import { ProceduralElder } from './character/ProceduralElder';
+import { EnvironmentManager } from './environments';
 import { createMajlis, type Majlis } from './majlis';
 
 export type ViewMode = 'vr' | 'mr';
 
 /**
  * Owns the renderer, the scene graph and the frame loop. The `stage` group
- * holds the majlis and the elder and is what MR placement moves around.
+ * holds the environment, the elder and his lights, and is what MR placement
+ * moves around.
  */
 export class SceneApp {
   readonly renderer: THREE.WebGLRenderer;
@@ -18,9 +20,10 @@ export class SceneApp {
   readonly camera: THREE.PerspectiveCamera;
   readonly stage = new THREE.Group();
   readonly majlis: Majlis;
+  readonly environments: EnvironmentManager;
   private rig: CharacterRig | null = null;
   readonly behavior = new BehaviorMachine();
-  private readonly controls: OrbitControls;
+  readonly controls: OrbitControls;
   private readonly timer = new THREE.Timer();
   private readonly frameHooks: Array<(dt: number, time: number, frame?: XRFrame) => void> = [];
   private readonly headWorld = new THREE.Vector3();
@@ -41,8 +44,8 @@ export class SceneApp {
 
     this.scene.add(this.stage);
     this.majlis = createMajlis();
-    this.stage.add(this.majlis.full, this.majlis.core);
-    this.scene.add(this.majlis.lights);
+    this.environments = new EnvironmentManager(this.majlis.full);
+    this.stage.add(this.environments.root, this.majlis.core, this.majlis.lights);
 
     this.behavior.on('change', ({ to }) => this.rig?.setState(to));
 
@@ -100,10 +103,10 @@ export class SceneApp {
     return this.viewMode;
   }
 
-  /** VR shows the whole majlis; MR keeps only the elder, his rug and coffee set. */
+  /** VR shows the whole environment; MR keeps only the elder, his rug and coffee set. */
   setViewMode(mode: ViewMode): void {
     this.viewMode = mode;
-    this.majlis.full.visible = mode === 'vr';
+    this.environments.root.visible = mode === 'vr';
   }
 
   /** Portrait phones need the camera further back to fit the seated elder. */

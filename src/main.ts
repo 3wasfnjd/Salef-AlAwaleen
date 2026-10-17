@@ -2,6 +2,7 @@ import './ui/style.css';
 import type { BehaviorState, ConversationEvent } from './core/behavior';
 import { t } from './i18n';
 import { ProceduralElder } from './scene/character/ProceduralElder';
+import { ENVIRONMENTS, type EnvironmentId } from './scene/environments';
 import { SceneApp } from './scene/SceneApp';
 import { Overlay } from './ui/Overlay';
 import { XRExperience } from './xr/XRExperience';
@@ -17,6 +18,18 @@ const PREVIEW_PATH: Record<BehaviorState, ConversationEvent[]> = {
   interrupted: [{ type: 'responseStarted', story: true }, { type: 'userStartedSpeaking' }],
 };
 
+const ENV_KEY = 'salef.environment';
+
+function savedEnvironment(): EnvironmentId {
+  try {
+    const saved = localStorage.getItem(ENV_KEY);
+    if (saved && (ENVIRONMENTS as string[]).includes(saved)) return saved as EnvironmentId;
+  } catch {
+    // Storage unavailable: default place.
+  }
+  return 'majlis';
+}
+
 async function boot(): Promise<void> {
   const stage = document.getElementById('stage');
   const ui = document.getElementById('ui');
@@ -26,9 +39,20 @@ async function boot(): Promise<void> {
   const params = new URLSearchParams(location.search);
   if (params.get('character') === 'procedural') app.setCharacter(new ProceduralElder());
   else void app.loadCharacter(new URL('models/shaib.glb', document.baseURI).href);
+  const setEnvironment = (id: EnvironmentId) => {
+    try {
+      localStorage.setItem(ENV_KEY, id);
+    } catch {
+      // Storage unavailable (private mode): the choice still applies now.
+    }
+    return app.environments.show(id);
+  };
+  void app.environments.show(savedEnvironment());
+
   const caps = await XRExperience.capabilities();
   const xr = new XRExperience(app, caps, {
     onSessionEnd: () => document.body.classList.remove('in-xr'),
+    setEnvironment,
   });
 
   const overlay = new Overlay(ui, caps, {
@@ -37,6 +61,8 @@ async function boot(): Promise<void> {
         .then(() => document.body.classList.add('in-xr'))
         .catch((err: unknown) => overlay.showError(t('xr.sessionError', { error: String((err as Error)?.message ?? err) })));
     },
+    setEnvironment: (id) => void setEnvironment(id),
+    currentEnvironment: () => app.environments.current,
     previewState: (state) => {
       const now = performance.now();
       app.behavior.dispatch({ type: 'reset' }, now);

@@ -23,5 +23,10 @@
   "state.storytelling": "يسولف",
   "state.reacting": "يتفاعل",
   "state.interrupted": "مقاطَع",
-  "touch.hint": "اسحب للالتفاف، وقرّب بإصبعين"
+  "touch.hint": "اسحب للالتفاف، وقرّب بإصبعين",
+  "env.label": "المكان",
+  "env.majlis": "المجلس",
+  "env.fereej": "الفريج",
+  "env.barr": "البر — بيت الشعر",
+  "env.loading": "يجهّز المكان…"
 }

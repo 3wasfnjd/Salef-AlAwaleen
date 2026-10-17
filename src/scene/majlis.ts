@@ -36,6 +36,7 @@ export function createMajlis(): Majlis {
   full.add(buildFurniture());
   full.add(buildSky());
   full.add(buildLanternGlow());
+  full.add(buildLanternLight());
 
   core.add(buildRug());
   core.add(buildElderSeat());
@@ -208,10 +209,13 @@ function buildLights(): THREE.Group {
   const key = new THREE.DirectionalLight('#ffd9a8', 1.3);
   key.position.set(1.5, 3, 2);
   g.add(key);
+  return g;
+}
+
+function buildLanternLight(): THREE.PointLight {
   const lamp = new THREE.PointLight('#ff9f45', 2.2, 5, 1.6);
   lamp.position.set(1.1, 0.35, -0.9);
-  g.add(lamp);
-  return g;
+  return named(lamp, 'lantern-light');
 }
 
 function buildLanternGlow(): THREE.Mesh {

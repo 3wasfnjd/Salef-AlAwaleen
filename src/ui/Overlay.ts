@@ -1,10 +1,13 @@
 import type { BehaviorState } from '../core/behavior';
+import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import { isRtl, locale, setLocale, t, type MessageKey } from '../i18n';
 import type { XRCapabilities } from '../xr/XRExperience';
 
 export interface OverlayActions {
   enterXR(mode: 'vr' | 'mr'): void;
   previewState(state: BehaviorState): void;
+  setEnvironment(id: EnvironmentId): void;
+  currentEnvironment(): EnvironmentId;
 }
 
 const PREVIEW_STATES: BehaviorState[] = ['idle', 'listening', 'thinking', 'speaking', 'storytelling', 'reacting', 'interrupted'];
@@ -51,6 +54,19 @@ export class Overlay {
       bottom.append(el('p', 'notice', t('xr.unsupported')));
       bottom.append(el('p', 'hint', t('touch.hint')));
     }
+    const place = el('label', 'states');
+    const placeSelect = document.createElement('select');
+    for (const id of ENVIRONMENTS) {
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = t(`env.${id}` as MessageKey);
+      option.selected = id === this.actions.currentEnvironment();
+      placeSelect.append(option);
+    }
+    placeSelect.addEventListener('change', () => this.actions.setEnvironment(placeSelect.value as EnvironmentId));
+    place.append(document.createTextNode(t('env.label')), placeSelect);
+    bottom.append(place);
+
     bottom.append(el('p', 'notice', t('app.phaseNotice')));
 
     // Developer preview of animation states. Clearly labelled: not an AI conversation.

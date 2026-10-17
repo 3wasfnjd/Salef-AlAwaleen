@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { BehaviorState } from '../../core/behavior';
+import { toStandard } from '../assets';
 import type { CharacterRig, Expression, Gesture } from './CharacterRig';
 
 /** Morph targets authored on the elder's Body mesh (Mafateeh `shaib.glb`). */
@@ -16,19 +17,6 @@ type Morph =
   | 'frown'
   | 'mouth_oo'
   | 'mouth_open';
-
-/**
- * The model uses KHR_materials_sheen/specular, which make three.js compile the
- * heavy MeshPhysicalMaterial shader. On Quest that cost isn't worth the subtle
- * cloth sheen, so keep the same maps on a MeshStandardMaterial.
- */
-function toStandard(material: THREE.Material): THREE.Material {
-  if (!(material instanceof THREE.MeshPhysicalMaterial)) return material;
-  const standard = new THREE.MeshStandardMaterial();
-  THREE.MeshStandardMaterial.prototype.copy.call(standard, material);
-  material.dispose();
-  return standard;
-}
 
 /**
  * The Mafateeh rig is authored at puzzle-game scale (seated head ≈ 0.53 m).
@@ -99,6 +87,7 @@ export class GlbElder implements CharacterRig {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh) {
         mesh.frustumCulled = false; // skinned bounds don't follow the animation
+        // Sheen/specular force the heavy physical shader; not worth it on Quest.
         mesh.material = Array.isArray(mesh.material) ? mesh.material.map(toStandard) : toStandard(mesh.material);
         if (mesh.morphTargetDictionary && 'mouth_open' in mesh.morphTargetDictionary) this.faces.push(mesh);
       }

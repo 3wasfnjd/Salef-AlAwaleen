@@ -23,5 +23,10 @@
   "state.storytelling": "Storytelling",
   "state.reacting": "Reacting",
   "state.interrupted": "Interrupted",
-  "touch.hint": "Drag to look around, pinch to zoom"
+  "touch.hint": "Drag to look around, pinch to zoom",
+  "env.label": "Place",
+  "env.majlis": "Majlis",
+  "env.fereej": "Old neighbourhood",
+  "env.barr": "Desert — tent",
+  "env.loading": "Preparing the place…"
 }

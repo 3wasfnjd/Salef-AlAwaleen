@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { t } from '../i18n';
+import { t, type MessageKey } from '../i18n';
+import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import type { SceneApp, ViewMode } from '../scene/SceneApp';
 import { XRPanel } from './XRPanel';
 
@@ -10,6 +11,7 @@ export interface XRCapabilities {
 
 export interface XRCallbacks {
   onSessionEnd(): void;
+  setEnvironment(id: EnvironmentId): Promise<void>;
 }
 
 const ELDER_DISTANCE = 1.5;
@@ -155,6 +157,7 @@ export class XRExperience {
           : { id: 'mode', label: t('btn.switchToVR') },
       );
     }
+    if (this.app.mode === 'vr') buttons.push({ id: 'env', label: t(`env.${this.app.environments.current}` as MessageKey) });
     if (this.app.mode === 'mr') buttons.push({ id: 'place', label: t('btn.place') });
     buttons.push({ id: 'exit', label: t('btn.exit') });
     this.panel.setButtons(buttons);
@@ -164,6 +167,15 @@ export class XRExperience {
   private activate(id: string): void {
     if (id === 'mode') void this.setMode(this.app.mode === 'vr' ? 'mr' : 'vr');
     else if (id === 'place') this.setPlacing(true);
+    else if (id === 'env') {
+      const next = ENVIRONMENTS[(ENVIRONMENTS.indexOf(this.app.environments.current) + 1) % ENVIRONMENTS.length];
+      this.hint = t('env.loading');
+      void this.callbacks.setEnvironment(next).finally(() => {
+        this.hint = '';
+        this.refreshPanel();
+      });
+      this.refreshPanel();
+    }
     else if (id === 'exit') this.end();
   }
 
