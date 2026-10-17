@@ -36,6 +36,8 @@ export class Overlay implements ConversationView {
   private error = '';
   private voiceStatus: VoiceStatus = { kind: 'idle' };
   private speaking = false;
+  /** The side drawer with the options; closed so the scene stays open. */
+  private menuOpen = false;
   private lines: Record<Transcript['role'], string> = { user: '', character: '' };
   private refs: {
     status?: HTMLElement;
@@ -106,7 +108,11 @@ export class Overlay implements ConversationView {
       setLocale(locale() === 'ar' ? 'en' : 'ar');
       this.render();
     });
-    top.append(titles, lang);
+    const menu = button(`☰ ${t('btn.options')}`, 'small', () => this.setMenu(!this.menuOpen));
+    menu.setAttribute('aria-expanded', String(this.menuOpen));
+    const actions = el('div', 'row');
+    actions.append(menu, lang);
+    top.append(titles, actions);
 
     const bottom = el('section', 'bottom');
 
@@ -138,8 +144,13 @@ export class Overlay implements ConversationView {
       bottom.append(row);
     }
 
-    // Everything secondary lives under one collapsed "options" section.
-    const options = details(t('btn.options'));
+    // Everything secondary lives in a side drawer, closed by default.
+    const options = el('aside', 'drawer');
+    options.id = 'options';
+    options.hidden = !this.menuOpen;
+    const head = el('div', 'drawer-head');
+    head.append(el('h2', '', t('btn.options')), button(t('btn.close'), 'small', () => this.setMenu(false)));
+    options.append(head);
     const current = this.actions.getCharacter();
     options.append(
       this.select(t('settings.character'), CHARACTER_IDS.map((id) => [id, t(CHARACTERS[id].nameKey)]), current, (v) => {
@@ -180,12 +191,19 @@ export class Overlay implements ConversationView {
     options.append(this.select(t('states.title'), PREVIEW_STATES.map((s) => [s, t(`state.${s}` as MessageKey)]), 'idle', (v) =>
       this.actions.previewState(v as BehaviorState),
     ));
-    bottom.append(options, el('p', 'notice', t('app.phaseNotice')));
-    if (current === 'nawwara') bottom.append(el('p', 'notice', t('kids.notice')));
+    options.append(el('p', 'notice', t('app.phaseNotice')));
+    if (current === 'nawwara') options.append(el('p', 'notice', t('kids.notice')));
 
     if (this.error) bottom.append(el('p', 'notice error', this.error));
-    this.root.append(top, bottom);
+    this.root.append(top, bottom, options);
     this.updateVoice();
+  }
+
+  private setMenu(open: boolean): void {
+    this.menuOpen = open;
+    const drawer = this.root.querySelector<HTMLElement>('.drawer');
+    if (drawer) drawer.hidden = !open;
+    this.root.querySelector('.top button[aria-expanded]')?.setAttribute('aria-expanded', String(open));
   }
 
   private select(label: string, options: Array<[string, string]>, value: string, onChange: (v: string) => void): HTMLElement {
@@ -209,14 +227,6 @@ function el(tag: string, className = '', text?: string): HTMLElement {
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
-}
-
-function details(summaryText: string): HTMLDetailsElement {
-  const d = document.createElement('details');
-  const summary = document.createElement('summary');
-  summary.textContent = summaryText;
-  d.append(summary);
-  return d;
 }
 
 function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
