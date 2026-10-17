@@ -27,13 +27,12 @@
 
 كل الحالات ضمن 100 ألف مثلث. حجم الشايب 5.1MB، وكل نماذج الأماكن معًا 2.4MB، وتُحمّل فقط عند اختيار المكان. الأداء الحقيقي يُقاس على النظارة من عدّاد fps في اللوحة.
 
-## خطوات المالك (مرة واحدة، من الآيفون)
+## رابط التجربة
 
-1. **تفعيل GitHub Pages:**
-   - افتح المستودع في Safari ← Settings ← Pages.
-   - تحت Build and deployment، اختر Source: **GitHub Actions**.
-2. **الدمج في `main`:** النشر على Pages يعمل من الفرع الرئيسي فقط.
-3. **رابط التجربة بعد النشر:** `https://3wasfnjd.github.io/Salef-AlAwaleen/`
+`https://3wasfnjd.github.io/Salef-AlAwaleen/`
+
+- كل دمج في `main` ينشر الموقع تلقائيًا على فرع `gh-pages`.
+- إذا ما اشتغل الرابط: افتح المستودع ← Settings ← Pages، واختر Source: **Deploy from a branch**، والفرع **gh-pages** / **(root)**.
    - **iPhone:** افتحه في Safari.
    - **Quest:** افتحه في متصفح Quest، ثم اضغط «ادخل المجلس» أو «الشايب في غرفتك».
 
