@@ -7,7 +7,7 @@ name: Deploy voice server (Cloudflare Worker)
 on:
   push:
     branches: [main]
-    paths: ['server/**', 'persona/**', '.github/workflows/server.yml']
+    paths: ['server/**', 'persona/**', 'scripts/live-smoke.mjs', '.github/workflows/server.yml']
   workflow_dispatch:
 
 permissions:
@@ -66,8 +66,22 @@ jobs:
           for i in $(seq 1 10); do curl -sf "$URL/health" && break; sleep 3; done
           echo
           curl -sf "$URL/health" | grep -q '"configured":true'
+          echo "API_BASE=$URL" >> "$GITHUB_ENV"
           {
             echo "### Voice server"
             echo "- URL: $URL"
             echo "- Health: \`$(curl -sf "$URL/health")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Live smoke test (real Gemini greeting)
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          export ACCESS_CODE="${ACCESS_CODES%%,*}"
+          node scripts/live-smoke.mjs | tee smoke.txt
+          {
+            echo "### Live smoke test"
+            echo '```'
+            cat smoke.txt
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
