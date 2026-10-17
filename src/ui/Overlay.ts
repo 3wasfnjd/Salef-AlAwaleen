@@ -1,6 +1,7 @@
 import type { BehaviorState } from '../core/behavior';
 import type { InterruptMode, Transcript, VoiceStatus } from '../core/voice';
-import { VOICES, statusText, type ConversationView, type VoiceName } from '../conversation';
+import { CHARACTER_IDS, CHARACTERS, type CharacterId } from '../characters';
+import { statusText, type ConversationView } from '../conversation';
 import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import { isRtl, locale, setLocale, t, type MessageKey } from '../i18n';
 import type { XRCapabilities } from '../xr/XRExperience';
@@ -19,11 +20,13 @@ export interface OverlayActions {
     setCode(code: string): void;
     getMode(): InterruptMode;
     setMode(mode: InterruptMode): void;
-    getVoice(): VoiceName;
-    setVoice(v: VoiceName): void;
+    getVoice(): string;
+    setVoice(v: string): void;
     getTone(): boolean;
     setTone(on: boolean): void;
   };
+  getCharacter(): CharacterId;
+  setCharacter(id: CharacterId): void;
 }
 
 const PREVIEW_STATES: BehaviorState[] = ['idle', 'listening', 'thinking', 'speaking', 'storytelling', 'reacting', 'interrupted'];
@@ -83,7 +86,8 @@ export class Overlay implements ConversationView {
     if (cut) cut.hidden = !(this.speaking && this.actions.voice.active());
     if (captions && user && character) {
       user.textContent = this.lines.user ? `${t('caption.you')}: ${this.lines.user}` : '';
-      character.textContent = this.lines.character ? `${t('caption.elder')}: ${this.lines.character}` : '';
+      const name = t(CHARACTERS[this.actions.getCharacter()].nameKey).split(' — ')[0];
+      character.textContent = this.lines.character ? `${name}: ${this.lines.character}` : '';
       captions.hidden = !this.lines.user && !this.lines.character;
     }
   }
@@ -136,6 +140,14 @@ export class Overlay implements ConversationView {
 
     // Everything secondary lives under one collapsed "options" section.
     const options = details(t('btn.options'));
+    const current = this.actions.getCharacter();
+    options.append(
+      this.select(t('settings.character'), CHARACTER_IDS.map((id) => [id, t(CHARACTERS[id].nameKey)]), current, (v) => {
+        this.actions.setCharacter(v as CharacterId);
+        this.lines = { user: '', character: '' };
+        this.render();
+      }),
+    );
     options.append(this.select(t('env.label'), ENVIRONMENTS.map((id) => [id, t(`env.${id}` as MessageKey)]), this.actions.currentEnvironment(), (v) =>
       this.actions.setEnvironment(v as EnvironmentId),
     ));
@@ -152,8 +164,8 @@ export class Overlay implements ConversationView {
         this.select(t('settings.interrupt'), [['auto', t('interrupt.auto')], ['tap', t('interrupt.tap')]], voice.getMode(), (v) =>
           voice.setMode(v as InterruptMode),
         ),
-        this.select(t('settings.voice'), VOICES.map((v) => [v, t(`voice.${v}` as MessageKey)]), voice.getVoice(), (v) =>
-          voice.setVoice(v as VoiceName),
+        this.select(t('settings.voice'), CHARACTERS[current].voices.map((v) => [v, t(`voice.${v}` as MessageKey)]), voice.getVoice(), (v) =>
+          voice.setVoice(v),
         ),
         el('p', 'hint', t('settings.voiceNote')),
         this.select(t('settings.tone'), [['on', t('tone.on')], ['off', t('tone.off')]], voice.getTone() ? 'on' : 'off', (v) =>
@@ -169,6 +181,7 @@ export class Overlay implements ConversationView {
       this.actions.previewState(v as BehaviorState),
     ));
     bottom.append(options, el('p', 'notice', t('app.phaseNotice')));
+    if (current === 'nawwara') bottom.append(el('p', 'notice', t('kids.notice')));
 
     if (this.error) bottom.append(el('p', 'notice error', this.error));
     this.root.append(top, bottom);

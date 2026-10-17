@@ -1,9 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BehaviorMachine } from '../core/behavior';
-import type { CharacterRig } from './character/CharacterRig';
-import { GlbElder } from './character/GlbElder';
-import { ProceduralElder } from './character/ProceduralElder';
+import type { CharacterRig, Posture } from './character/CharacterRig';
 import { EnvironmentManager } from './environments';
 import { createMajlis, type Majlis } from './majlis';
 
@@ -22,6 +20,7 @@ export class SceneApp {
   readonly majlis: Majlis;
   readonly environments: EnvironmentManager;
   private rig: CharacterRig | null = null;
+  private posture: Posture = 'seated';
   readonly behavior = new BehaviorMachine();
   readonly controls: OrbitControls;
   private readonly timer = new THREE.Timer();
@@ -69,29 +68,18 @@ export class SceneApp {
     return this.rig;
   }
 
-  /**
-   * Loads the rigged elder (GLB). If it cannot be loaded (network, old
-   * device), the procedural elder is used so the experience still works.
-   */
-  async loadCharacter(url: string): Promise<'glb' | 'procedural'> {
-    let kind: 'glb' | 'procedural' = 'glb';
-    let rig: CharacterRig;
-    try {
-      rig = await GlbElder.load(url);
-    } catch (err) {
-      console.warn('Elder model failed to load, using procedural fallback', err);
-      rig = new ProceduralElder();
-      kind = 'procedural';
-    }
-    this.setCharacter(rig);
-    return kind;
-  }
-
   setCharacter(rig: CharacterRig): void {
     this.rig?.dispose();
     this.rig = rig;
     rig.setState(this.behavior.state);
+    rig.setPosture(this.posture);
     this.stage.add(rig.object);
+  }
+
+  /** Posture survives character swaps (e.g. switching while walking together). */
+  setPosture(p: Posture): void {
+    this.posture = p;
+    this.rig?.setPosture(p);
   }
 
   /** Registers a callback that runs every frame (2D and XR). */

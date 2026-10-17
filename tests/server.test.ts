@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RateLimiter, allowedOrigin, buildLiveSetup, checkAccessCode, fieldMask, pickVoice, tokenRequestBody } from '../server/src/logic';
+import { RateLimiter, allowedOrigin, buildLiveSetup, checkAccessCode, fieldMask, pickCharacter, pickVoice, tokenRequestBody } from '../server/src/logic';
 
 describe('token server logic', () => {
   const setup = buildLiveSetup({ model: 'gemini-3.1-flash-live-preview', voice: 'Algenib', persona: 'أنت أبو ناصر' });
@@ -34,6 +34,13 @@ describe('token server logic', () => {
     expect(checkAccessCode('', 'majlis-2026')).toBe(false);
     expect(checkAccessCode('x', undefined)).toBe(false);
     expect(checkAccessCode(42, 'x')).toBe(false);
+  });
+
+  it('picks a known character or the default', () => {
+    const chars = { 'abu-nasser': { persona: 'a', defaultVoice: 'Algenib' }, nawwara: { persona: 'n', defaultVoice: 'Leda' } };
+    expect(pickCharacter('nawwara', chars)).toBe('nawwara');
+    expect(pickCharacter('villain', chars)).toBe('abu-nasser');
+    expect(pickCharacter(undefined, chars)).toBe('abu-nasser');
   });
 
   it('only accepts voices from the allow-list', () => {

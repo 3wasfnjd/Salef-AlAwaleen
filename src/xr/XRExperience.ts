@@ -343,13 +343,13 @@ export class XRExperience {
       this.hint = this.room.known ? this.roomStatus() : t('room.none');
       this.roomOutlineUntil = this.elapsed + 6;
       this.app.majlis.core.visible = false;
-      rig?.setPosture('standing');
+      this.app.setPosture('standing');
       const look = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
       this.companion.reset(this.app.stage.position, this.app.stage.rotation.y, head, look);
     } else {
       this.hint = '';
       rig?.setLocomotion(0);
-      rig?.setPosture('seated');
+      this.app.setPosture('seated');
       this.app.majlis.core.visible = true;
       this.panel.mesh.visible = this.session !== null;
       // Sit down right where he is, facing the player.

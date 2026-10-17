@@ -11,11 +11,17 @@ import { rms } from './pcm';
  * processing for all output, so it plays directly.
  */
 /**
- * "Elder tone": a slightly slower, lower playback (≈8%) plus a warmer EQ
- * (more low end, softer highs). Not a voice clone; a light age cue on top
- * of the provider's prebuilt voice.
+ * Light colouring on top of the provider's prebuilt voice (not a voice clone):
+ * - elder: ≈8% slower/lower with a warmer EQ (more low end, softer highs);
+ * - child: ≈12% faster/higher with a brighter EQ.
  */
-const ELDER_RATE = 0.92;
+export type VoiceTone = 'elder' | 'child' | 'none';
+
+const TONES: Record<VoiceTone, { rate: number; low: number; high: number }> = {
+  elder: { rate: 0.92, low: 4, high: -5 },
+  child: { rate: 1.12, low: -3, high: 3 },
+  none: { rate: 1, low: 0, high: 0 },
+};
 
 export class AudioPlayer {
   private readonly gain: GainNode;
@@ -31,7 +37,7 @@ export class AudioPlayer {
 
   constructor(
     private readonly ctx: AudioContext,
-    elderTone = true,
+    tone: VoiceTone = 'none',
   ) {
     this.low = ctx.createBiquadFilter();
     this.low.type = 'lowshelf';
@@ -45,13 +51,14 @@ export class AudioPlayer {
     this.levelBuf = new Float32Array(this.analyser.fftSize);
     this.low.connect(this.high).connect(this.gain);
     this.gain.connect(this.analyser);
-    this.setElderTone(elderTone);
+    this.setTone(tone);
   }
 
-  setElderTone(on: boolean): void {
-    this.rate = on ? ELDER_RATE : 1;
-    this.low.gain.value = on ? 4 : 0;
-    this.high.gain.value = on ? -5 : 0;
+  setTone(tone: VoiceTone): void {
+    const t = TONES[tone];
+    this.rate = t.rate;
+    this.low.gain.value = t.low;
+    this.high.gain.value = t.high;
   }
 
   /** Connects the output, via the WebRTC loopback where it helps echo cancellation. */

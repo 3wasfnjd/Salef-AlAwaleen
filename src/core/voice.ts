@@ -45,7 +45,7 @@ export interface VoiceSession {
   interrupt(): void;
   close(): void;
   setInterruptMode(mode: InterruptMode): void;
-  setElderTone(on: boolean): void;
+  setTone(tone: 'elder' | 'child' | 'none'): void;
   onEvent(fn: (event: ConversationEvent) => void): () => void;
   onStatus(fn: (status: VoiceStatus) => void): () => void;
   onTranscript(fn: (t: Transcript) => void): () => void;

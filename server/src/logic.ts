@@ -56,6 +56,17 @@ export function tokenRequestBody(setup: Record<string, unknown>, now: Date): Rec
   };
 }
 
+export interface CharacterConfig {
+  persona: string;
+  defaultVoice: string;
+}
+
+/** The requested character if known, otherwise the first (default) one. */
+export function pickCharacter(requested: unknown, characters: Record<string, CharacterConfig>): string {
+  const ids = Object.keys(characters);
+  return typeof requested === 'string' && ids.includes(requested) ? requested : ids[0];
+}
+
 /** A voice the client asked for, if it is on the server's allow-list; otherwise the default. */
 export function pickVoice(requested: unknown, allowedCsv: string, fallback: string): string {
   if (typeof requested !== 'string') return fallback;

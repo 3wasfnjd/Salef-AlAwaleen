@@ -1,4 +1,5 @@
-import persona from '../../persona/ar-najdi.md';
+import abuNasser from '../../persona/ar-najdi.md';
+import nawwara from '../../persona/nawwara.md';
 import {
   GEMINI_API,
   LIVE_WS_URL,
@@ -6,7 +7,9 @@ import {
   allowedOrigin,
   buildLiveSetup,
   checkAccessCode,
+  pickCharacter,
   pickVoice,
+  type CharacterConfig,
   tokenRequestBody,
 } from './logic';
 
@@ -22,8 +25,18 @@ interface Env {
   ALLOWED_ORIGINS: string;
   GEMINI_LIVE_MODEL: string;
   GEMINI_VOICE: string;
+  /** Default voice for Nawwara (the children's character). */
+  NAWWARA_VOICE: string;
   /** Comma-separated prebuilt voices the app may choose from. */
   VOICE_CHOICES: string;
+}
+
+/** Characters the app can talk to. The first one is the default. */
+function characters(env: Env): Record<string, CharacterConfig> {
+  return {
+    'abu-nasser': { persona: abuNasser, defaultVoice: env.GEMINI_VOICE },
+    nawwara: { persona: nawwara, defaultVoice: env.NAWWARA_VOICE },
+  };
 }
 
 const perMinute = new RateLimiter(6, 60_000);
@@ -51,6 +64,7 @@ export default {
         ok: true,
         model: env.GEMINI_LIVE_MODEL,
         voices: (env.VOICE_CHOICES ?? '').split(',').filter(Boolean),
+        characters: Object.keys(characters(env)),
         configured: Boolean(env.GEMINI_API_KEY),
       });
     }
@@ -59,8 +73,13 @@ export default {
 
     let code: unknown;
     let requestedVoice: unknown;
+    let requestedCharacter: unknown;
     try {
-      ({ code, voice: requestedVoice } = (await request.json()) as { code?: unknown; voice?: unknown });
+      ({ code, voice: requestedVoice, character: requestedCharacter } = (await request.json()) as {
+        code?: unknown;
+        voice?: unknown;
+        character?: unknown;
+      });
     } catch {
       return json({ error: 'bad_request' }, 400);
     }
@@ -71,7 +90,10 @@ export default {
     if (!perMinute.allow(ip, now) || !perDay.allow(ip, now)) return json({ error: 'rate_limited' }, 429);
     if (!env.GEMINI_API_KEY) return json({ error: 'server_not_configured' }, 503);
 
-    const voice = pickVoice(requestedVoice, env.VOICE_CHOICES ?? '', env.GEMINI_VOICE);
+    const all = characters(env);
+    const character = pickCharacter(requestedCharacter, all);
+    const { persona, defaultVoice } = all[character];
+    const voice = pickVoice(requestedVoice, env.VOICE_CHOICES ?? '', defaultVoice);
     const setup = buildLiveSetup({ model: env.GEMINI_LIVE_MODEL, voice, persona });
     const upstream = await fetch(`${GEMINI_API}/v1alpha/auth_tokens`, {
       method: 'POST',
@@ -85,6 +107,6 @@ export default {
     }
     const token = (await upstream.json()) as { name?: string };
     if (!token.name) return json({ error: 'upstream_error' }, 502);
-    return json({ token: token.name, model: setup.model, voice, wsUrl: LIVE_WS_URL });
+    return json({ token: token.name, model: setup.model, character, voice, wsUrl: LIVE_WS_URL });
   },
 };

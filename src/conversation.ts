@@ -1,16 +1,14 @@
 import type { InterruptMode, Transcript, VoiceSession, VoiceStatus } from './core/voice';
+import { CHARACTERS, isCharacterId, type CharacterId } from './characters';
 import { t, type MessageKey } from './i18n';
 import type { SceneApp } from './scene/SceneApp';
 import { GeminiLiveSession } from './voice/GeminiLiveSession';
 
 const CODE_KEY = 'salef.accessCode';
 const MODE_KEY = 'salef.interruptMode';
-const VOICE_KEY = 'salef.voice';
-const TONE_KEY = 'salef.elderTone';
-
-/** Male prebuilt Gemini voices offered to the owner (must match VOICE_CHOICES on the server). */
-export const VOICES = ['Algenib', 'Charon', 'Sadaltager', 'Enceladus', 'Orus', 'Iapetus', 'Schedar', 'Umbriel'] as const;
-export type VoiceName = (typeof VOICES)[number];
+const VOICE_KEY = 'salef.voice.';
+const TONE_KEY = 'salef.tone';
+const CHARACTER_KEY = 'salef.character';
 
 /** Localised text for a voice status. */
 export function statusText(s: VoiceStatus): string {
@@ -84,7 +82,9 @@ export class Conversation {
       accessCode: this.accessCode,
       interruptMode: this.interruptMode,
       voice: this.voice,
-      elderTone: this.elderTone,
+      tone: this.toneOn ? CHARACTERS[this.character].tone : 'none',
+      character: this.character,
+      greeting: CHARACTERS[this.character].greeting,
     });
     this.session = session;
     session.onEvent((e) => this.app.behavior.dispatch(e, performance.now()));
@@ -131,23 +131,38 @@ export class Conversation {
     this.session?.setInterruptMode(mode);
   }
 
-  get voice(): VoiceName {
-    const v = read(VOICE_KEY);
-    return (VOICES as readonly string[]).includes(v ?? '') ? (v as VoiceName) : 'Algenib';
+  get character(): CharacterId {
+    const c = read(CHARACTER_KEY);
+    return isCharacterId(c) ? c : 'abu-nasser';
+  }
+
+  /** Switching character ends the current session (persona and voice are per session). */
+  set character(id: CharacterId) {
+    if (id === this.character) return;
+    this.stop();
+    write(CHARACTER_KEY, id);
+  }
+
+  /** The chosen voice for the current character. */
+  get voice(): string {
+    const def = CHARACTERS[this.character];
+    const v = read(VOICE_KEY + def.id);
+    return v && def.voices.includes(v) ? v : def.defaultVoice;
   }
 
   /** Takes effect from the next session (the voice is locked into each session's token). */
-  set voice(v: VoiceName) {
-    write(VOICE_KEY, v);
+  set voice(v: string) {
+    write(VOICE_KEY + this.character, v);
   }
 
-  get elderTone(): boolean {
+  /** Whether the character's tone colouring (elder / child) is applied. */
+  get toneOn(): boolean {
     return read(TONE_KEY) !== 'off';
   }
 
-  set elderTone(on: boolean) {
+  set toneOn(on: boolean) {
     write(TONE_KEY, on ? 'on' : 'off');
-    this.session?.setElderTone(on);
+    this.session?.setTone(on ? CHARACTERS[this.character].tone : 'none');
   }
 }
 

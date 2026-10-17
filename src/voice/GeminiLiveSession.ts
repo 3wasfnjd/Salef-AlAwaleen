@@ -1,7 +1,7 @@
 import type { ConversationEvent } from '../core/behavior';
 import { Emitter } from '../core/emitter';
 import type { InterruptMode, Transcript, VoiceErrorCode, VoiceSession, VoiceStatus } from '../core/voice';
-import { AudioPlayer } from './AudioPlayer';
+import { AudioPlayer, type VoiceTone } from './AudioPlayer';
 import { base64ToBytes, bytesToBase64, pcm16ToFloat32, rateFromMime } from './pcm';
 
 export interface GeminiLiveOptions {
@@ -12,8 +12,12 @@ export interface GeminiLiveOptions {
   interruptMode: InterruptMode;
   /** Prebuilt voice name; the server only accepts voices on its allow-list. */
   voice?: string;
-  /** Slightly slower, lower, warmer playback. */
-  elderTone: boolean;
+  /** Playback colouring (elder / child / none). */
+  tone: VoiceTone;
+  /** Which persona the server should use. */
+  character: string;
+  /** Hidden first user turn that makes the character greet the player. */
+  greeting: string;
 }
 
 interface TokenResponse {
@@ -99,9 +103,9 @@ export class GeminiLiveSession implements VoiceSession {
     this.mode = mode;
   }
 
-  setElderTone(on: boolean): void {
-    this.options.elderTone = on;
-    this.player?.setElderTone(on);
+  setTone(tone: VoiceTone): void {
+    this.options.tone = tone;
+    this.player?.setTone(tone);
   }
 
   async start(): Promise<void> {
@@ -148,7 +152,7 @@ export class GeminiLiveSession implements VoiceSession {
       throw new VoiceError(name === 'NotAllowedError' || name === 'SecurityError' ? 'mic_denied' : 'mic_unavailable');
     }
 
-    this.player = new AudioPlayer(ctx, this.options.elderTone);
+    this.player = new AudioPlayer(ctx, this.options.tone);
     const isAppleWebKit = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
     await this.player.connectOutput(!isAppleWebKit);
 
@@ -198,7 +202,7 @@ export class GeminiLiveSession implements VoiceSession {
       res = await fetch(`${this.options.apiBase.replace(/\/$/, '')}/v1/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: this.options.accessCode, voice: this.options.voice }),
+        body: JSON.stringify({ code: this.options.accessCode, voice: this.options.voice, character: this.options.character }),
       });
     } catch {
       throw new VoiceError('server_unreachable');
@@ -238,7 +242,7 @@ export class GeminiLiveSession implements VoiceSession {
             this.greeted = true;
             ws.send(JSON.stringify({
               clientContent: {
-                turns: [{ role: 'user', parts: [{ text: '(دخل الضيف المجلس الآن وجلس قدامك. رحّب به باختصار.)' }] }],
+                turns: [{ role: 'user', parts: [{ text: this.options.greeting }] }],
                 turnComplete: true,
               },
             }));

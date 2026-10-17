@@ -9,22 +9,23 @@ if (!apiBase || !code) {
   process.exit(2);
 }
 
-const PROMPTS = [
-  '(دخل الضيف المجلس الآن وجلس قدامك. رحّب به باختصار.)',
-  'وش علومك يا عم؟ عطنا سالفة قصيرة من أول.',
-];
+const character = process.env.CHARACTER || 'abu-nasser';
+const PROMPTS = {
+  'abu-nasser': ['(دخل الضيف المجلس الآن وجلس قدامك. رحّب به باختصار.)', 'وش علومك يا عم؟ عطنا سالفة قصيرة من أول.'],
+  nawwara: ['(جاء صديقك الآن. رحّبي به بفرح وبجملة قصيرة.)', 'نوّارة! عطيني لغز سهل!'],
+}[character];
 
 const res = await fetch(`${apiBase}/v1/session`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Origin: 'https://3wasfnjd.github.io' },
-  body: JSON.stringify({ code, voice: process.env.VOICE }),
+  body: JSON.stringify({ code, voice: process.env.VOICE, character }),
 });
 if (!res.ok) {
   console.error(`token request failed: HTTP ${res.status} ${await res.text()}`);
   process.exit(1);
 }
-const { token, model, voice, wsUrl } = await res.json();
-console.log(`token OK (model ${model}, voice ${voice})`);
+const { token, model, voice, wsUrl, character: served } = await res.json();
+console.log(`token OK (character ${served}, model ${model}, voice ${voice})`);
 
 const turns = await new Promise((resolve, reject) => {
   const ws = new WebSocket(`${wsUrl}?access_token=${encodeURIComponent(token)}`);
@@ -72,6 +73,6 @@ const turns = await new Promise((resolve, reject) => {
 for (const t of turns) {
   console.log(`\n> ${t.prompt}`);
   console.log(`first audio after ${t.firstAudioMs} ms, audio ${t.seconds.toFixed(1)} s`);
-  console.log(`elder: ${t.text}`);
+  console.log(`${served}: ${t.text}`);
 }
 if (turns.some((t) => t.seconds < 0.5)) process.exit(1);

@@ -2,6 +2,7 @@ import './ui/style.css';
 import { Conversation } from './conversation';
 import type { BehaviorState, ConversationEvent } from './core/behavior';
 import { t } from './i18n';
+import { CHARACTERS, isCharacterId, type CharacterId } from './characters';
 import { ProceduralElder } from './scene/character/ProceduralElder';
 import { ENVIRONMENTS, type EnvironmentId } from './scene/environments';
 import { SceneApp } from './scene/SceneApp';
@@ -38,8 +39,7 @@ async function boot(): Promise<void> {
 
   const app = new SceneApp(stage);
   const params = new URLSearchParams(location.search);
-  if (params.get('character') === 'procedural') app.setCharacter(new ProceduralElder());
-  else void app.loadCharacter(new URL('models/shaib.glb', document.baseURI).href);
+
   const setEnvironment = (id: EnvironmentId) => {
     try {
       localStorage.setItem(ENV_KEY, id);
@@ -51,6 +51,21 @@ async function boot(): Promise<void> {
   void app.environments.show(savedEnvironment());
 
   const conversation = new Conversation(app, import.meta.env.VITE_API_BASE || undefined);
+
+  // Character: ?character=… for testing, otherwise the viewer's last choice.
+  let loading = 0;
+  const showCharacter = async (id: CharacterId) => {
+    const ticket = ++loading;
+    const rig = await CHARACTERS[id].load();
+    if (ticket === loading) app.setCharacter(rig);
+    else rig.dispose(); // a newer choice won
+  };
+  const requested = params.get('character');
+  if (requested === 'procedural') app.setCharacter(new ProceduralElder());
+  else {
+    if (isCharacterId(requested)) conversation.character = requested;
+    void showCharacter(conversation.character);
+  }
 
   const caps = await XRExperience.capabilities();
   const xr = new XRExperience(app, caps, {
@@ -78,8 +93,13 @@ async function boot(): Promise<void> {
       setMode: (mode) => (conversation.interruptMode = mode),
       getVoice: () => conversation.voice,
       setVoice: (v) => (conversation.voice = v),
-      getTone: () => conversation.elderTone,
-      setTone: (on) => (conversation.elderTone = on),
+      getTone: () => conversation.toneOn,
+      setTone: (on) => (conversation.toneOn = on),
+    },
+    getCharacter: () => conversation.character,
+    setCharacter: (id) => {
+      conversation.character = id;
+      void showCharacter(id);
     },
     previewState: (state) => {
       const now = performance.now();
