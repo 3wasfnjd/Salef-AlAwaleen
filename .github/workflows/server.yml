@@ -80,6 +80,7 @@ jobs:
           export ACCESS_CODE="${ACCESS_CODES%%,*}"
           node scripts/live-smoke.mjs | tee smoke.txt
           CHARACTER=nawwara node scripts/live-smoke.mjs | tee -a smoke.txt
+          CHARACTER=jelo node scripts/live-smoke.mjs | tee -a smoke.txt
           {
             echo "### Live smoke test"
             echo '```'

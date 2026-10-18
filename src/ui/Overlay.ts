@@ -101,18 +101,17 @@ export class Overlay implements ConversationView {
     this.root.replaceChildren();
     this.refs = {};
 
+    // Kept minimal so the characters have the screen: a menu button and a small title.
     const top = el('header', 'top');
-    const titles = el('div');
-    titles.append(el('h1', '', t('app.title')), el('p', '', t('app.subtitle')));
+    const menu = button('☰', 'icon', () => this.setMenu(!this.menuOpen));
+    menu.setAttribute('aria-expanded', String(this.menuOpen));
+    menu.setAttribute('aria-label', t('btn.options'));
+    menu.title = t('btn.options');
+    top.append(menu, el('h1', '', t('app.title')));
     const lang = button(t('btn.language'), 'small', () => {
       setLocale(locale() === 'ar' ? 'en' : 'ar');
       this.render();
     });
-    const menu = button(`☰ ${t('btn.options')}`, 'small', () => this.setMenu(!this.menuOpen));
-    menu.setAttribute('aria-expanded', String(this.menuOpen));
-    const actions = el('div', 'row');
-    actions.append(menu, lang);
-    top.append(titles, actions);
 
     const bottom = el('section', 'bottom');
 
@@ -132,16 +131,12 @@ export class Overlay implements ConversationView {
       });
       this.refs.cut = button(t('talk.cut'), '', () => voice.interrupt());
       row.append(this.refs.talk, this.refs.cut);
+      this.xrButtons(row);
       bottom.append(captions, this.refs.status, row);
     } else {
-      bottom.append(el('p', 'notice', t('voice.notConfigured')));
-    }
-
-    if (this.caps.vr || this.caps.ar) {
       const row = el('div', 'row');
-      row.append(button(t('btn.enterVR'), '', () => this.actions.enterXR('vr')));
-      if (this.caps.ar) row.append(button(t('btn.enterMR'), '', () => this.actions.enterXR('mr')));
-      bottom.append(row);
+      this.xrButtons(row);
+      bottom.append(el('p', 'notice', t('voice.notConfigured')), row);
     }
 
     // Everything secondary lives in a side drawer, closed by default.
@@ -149,7 +144,9 @@ export class Overlay implements ConversationView {
     options.id = 'options';
     options.hidden = !this.menuOpen;
     const head = el('div', 'drawer-head');
-    head.append(el('h2', '', t('btn.options')), button(t('btn.close'), 'small', () => this.setMenu(false)));
+    const headButtons = el('div', 'row');
+    headButtons.append(lang, button(t('btn.close'), 'small', () => this.setMenu(false)));
+    head.append(el('h2', '', t('btn.options')), headButtons);
     options.append(head);
     const current = this.actions.getCharacter();
     options.append(
@@ -192,11 +189,16 @@ export class Overlay implements ConversationView {
       this.actions.previewState(v as BehaviorState),
     ));
     options.append(el('p', 'notice', t('app.phaseNotice')));
-    if (current === 'nawwara') options.append(el('p', 'notice', t('kids.notice')));
+    if (CHARACTERS[current].kids) options.append(el('p', 'notice', t('kids.notice', { name: t(CHARACTERS[current].nameKey).split(' — ')[0] })));
 
     if (this.error) bottom.append(el('p', 'notice error', this.error));
     this.root.append(top, bottom, options);
     this.updateVoice();
+  }
+
+  private xrButtons(row: HTMLElement): void {
+    if (this.caps.vr) row.append(button(t('btn.enterVR'), '', () => this.actions.enterXR('vr')));
+    if (this.caps.ar) row.append(button(t('btn.enterMR'), '', () => this.actions.enterXR('mr')));
   }
 
   private setMenu(open: boolean): void {

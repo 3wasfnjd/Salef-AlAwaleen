@@ -14,7 +14,8 @@ GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
 # Default voices per character, and every prebuilt voice the app may switch to.
 GEMINI_VOICE = "Algenib"
 NAWWARA_VOICE = "Leda"
-VOICE_CHOICES = "Algenib,Charon,Sadaltager,Enceladus,Orus,Iapetus,Schedar,Umbriel,Leda,Laomedeia,Zephyr,Autonoe,Achernar,Aoede,Puck"
+JELO_VOICE = "Fenrir"
+VOICE_CHOICES = "Algenib,Charon,Sadaltager,Enceladus,Orus,Iapetus,Schedar,Umbriel,Leda,Laomedeia,Zephyr,Autonoe,Achernar,Aoede,Puck,Fenrir,Sadachbia,Achird,Zubenelgenubi"
 
 # Secrets (set by the deploy workflow from GitHub secrets, never committed):
 #   GEMINI_API_KEY, ACCESS_CODES

@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { BehaviorState } from '../../core/behavior';
 import { toStandard } from '../assets';
 import type { CharacterRig, Expression, Gesture, Posture } from './CharacterRig';
+import { Blinker, Gaze, damp } from './gaze';
 
 /** Morph targets authored on the elder's Body mesh (Mafateeh `shaib.glb`). */
 type Morph =
@@ -28,9 +29,6 @@ const SEAT_HEIGHT = 0.1;
 const WALK_CLIP_SPEED = 1.0;
 const FADE = 0.35;
 
-const damp = (current: number, target: number, rate: number, dt: number) =>
-  current + (target - current) * (1 - Math.exp(-rate * dt));
-
 /** Three.js strips '.' from node names (PropertyBinding.sanitizeNodeName). */
 const bone = (root: THREE.Object3D, name: string) =>
   root.getObjectByName(name) ?? root.getObjectByName(name.replace(/\./g, ''));
@@ -49,9 +47,8 @@ export class GlbElder implements CharacterRig {
 
   private readonly mixer: THREE.AnimationMixer;
   private readonly faces: THREE.Mesh[] = [];
-  private readonly head?: THREE.Object3D;
-  private readonly neck?: THREE.Object3D;
-  private readonly eyes: THREE.Object3D[] = [];
+  private readonly gaze: Gaze;
+  private readonly blinker = new Blinker();
   private readonly model: THREE.Object3D;
   private readonly actions: Partial<Record<'sit' | 'stand' | 'walk', THREE.AnimationAction>> = {};
   private current?: THREE.AnimationAction;
@@ -65,19 +62,6 @@ export class GlbElder implements CharacterRig {
     blink: 0, eyes_wide: 0, eyes_happy: 0, brows_up: 0, brows_angry: 0, brows_sad: 0,
     brow_raise_L: 0, smile: 0, frown: 0, mouth_oo: 0, mouth_open: 0,
   };
-  private readonly lookTarget = new THREE.Vector3(0, 1.1, 1.5);
-  private yaw = 0;
-  private pitch = 0;
-  private nextBlink = 2;
-  private blinkT = -1;
-  private wanderT = 0;
-  private readonly wander = new THREE.Vector2();
-  private readonly tmpV = new THREE.Vector3();
-  private readonly tmpQ = new THREE.Quaternion();
-  private readonly tmpQ2 = new THREE.Quaternion();
-  private readonly rootQ = new THREE.Quaternion();
-  private readonly up = new THREE.Vector3(0, 1, 0);
-  private readonly right = new THREE.Vector3();
 
   static async load(url: string): Promise<GlbElder> {
     const gltf = await new GLTFLoader().loadAsync(url);
@@ -99,12 +83,8 @@ export class GlbElder implements CharacterRig {
         if (mesh.morphTargetDictionary && 'mouth_open' in mesh.morphTargetDictionary) this.faces.push(mesh);
       }
     });
-    this.head = bone(model, 'Head');
-    this.neck = bone(model, 'Neck');
-    for (const name of ['Eye.L', 'Eye.R']) {
-      const eye = bone(model, name);
-      if (eye) this.eyes.push(eye);
-    }
+    const eyes = ['Eye.L', 'Eye.R'].map((name) => bone(model, name)).filter((e): e is THREE.Object3D => Boolean(e));
+    this.gaze = new Gaze(this.object, bone(model, 'Head'), bone(model, 'Neck'), eyes);
 
     this.mixer = new THREE.AnimationMixer(model);
     const action = (name: string) => {
@@ -152,7 +132,7 @@ export class GlbElder implements CharacterRig {
   }
 
   lookAt(target: THREE.Vector3): void {
-    this.lookTarget.copy(target);
+    this.gaze.target.copy(target);
   }
 
   gesture(_g: Gesture): void {
@@ -164,6 +144,7 @@ export class GlbElder implements CharacterRig {
   }
 
   update(dt: number, time: number): void {
+    this.gaze.restore();
     this.mixer.update(dt);
     this.object.updateMatrixWorld(true);
 
@@ -204,7 +185,7 @@ export class GlbElder implements CharacterRig {
     if (this.expression === 'thoughtful') target.brow_raise_L = Math.max(target.brow_raise_L, 0.5);
     target.mouth_open = this.mouth01;
     target.mouth_oo = Math.max(target.mouth_oo, this.mouth01 * 0.25 * (0.5 + 0.5 * Math.sin(time * 7)));
-    target.blink = this.blinkAmount(dt);
+    target.blink = this.blinker.update(dt);
 
     for (const key of Object.keys(target) as Morph[]) {
       this.morph[key] = key === 'blink' || key === 'mouth_open' ? target[key] : damp(this.morph[key], target[key], 6, dt);
@@ -218,77 +199,7 @@ export class GlbElder implements CharacterRig {
       }
     }
 
-    this.updateGaze(dt, time);
-  }
-
-  /**
-   * Turns neck/head/eyes toward the player on top of the animated pose.
-   * Works in world space relative to the character's facing (+Z), so it does
-   * not depend on how each bone's local axes were authored.
-   */
-  private updateGaze(dt: number, time: number): void {
-    if (!this.head) return;
-    this.object.getWorldQuaternion(this.rootQ);
-    const headPos = this.head.getWorldPosition(this.tmpV.set(0, 0, 0));
-    const dir = this.tmpV.copy(this.lookTarget).sub(headPos);
-    dir.applyQuaternion(this.tmpQ.copy(this.rootQ).invert()); // into character space
-
-    this.wanderT -= dt;
-    if (this.wanderT <= 0) {
-      this.wanderT = 1.5 + Math.random() * 3;
-      this.wander.set((Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.06);
-    }
-    let yawT = Math.atan2(dir.x, dir.z) + this.wander.x;
-    let pitchT = Math.atan2(dir.y, Math.hypot(dir.x, dir.z)) + this.wander.y;
-    if (this.state === 'thinking') {
-      yawT += 0.35;
-      pitchT += 0.22 + Math.sin(time * 0.5) * 0.03;
-    }
-    if (this.state === 'listening') pitchT -= 0.04; // slight attentive nod
-    yawT = THREE.MathUtils.clamp(yawT, -0.9, 0.9);
-    pitchT = THREE.MathUtils.clamp(pitchT, -0.45, 0.35);
-    this.yaw = damp(this.yaw, yawT, 5, dt);
-    this.pitch = damp(this.pitch, pitchT, 5, dt);
-
-    // World-space axes for the character: up and right.
-    this.up.set(0, 1, 0).applyQuaternion(this.rootQ);
-    this.right.set(1, 0, 0).applyQuaternion(this.rootQ);
-    const share: Array<[THREE.Object3D | undefined, number]> = [
-      [this.neck, 0.35],
-      [this.head, 0.45],
-    ];
-    for (const [b, k] of share) if (b) this.rotateBoneWorld(b, this.yaw * k, -this.pitch * k);
-    // Eyes take the remaining 20%, a little faster.
-    for (const eye of this.eyes) this.rotateBoneWorld(eye, this.yaw * 0.25, -this.pitch * 0.25);
-  }
-
-  /** Applies a yaw (about character up) then pitch (about character right) in world space. */
-  private rotateBoneWorld(b: THREE.Object3D, yaw: number, pitch: number): void {
-    const parent = b.parent;
-    if (!parent) return;
-    const world = b.getWorldQuaternion(this.tmpQ);
-    const delta = this.tmpQ2.setFromAxisAngle(this.up, yaw);
-    delta.multiply(new THREE.Quaternion().setFromAxisAngle(this.right, pitch));
-    world.premultiply(delta);
-    const parentWorld = parent.getWorldQuaternion(new THREE.Quaternion());
-    b.quaternion.copy(parentWorld.invert().multiply(world));
-    b.updateMatrixWorld(true);
-  }
-
-  private blinkAmount(dt: number): number {
-    this.nextBlink -= dt;
-    if (this.blinkT < 0 && this.nextBlink <= 0) {
-      this.blinkT = 0;
-      this.nextBlink = 2.5 + Math.random() * 4;
-    }
-    if (this.blinkT < 0) return 0;
-    this.blinkT += dt;
-    const d = 0.16;
-    if (this.blinkT >= d) {
-      this.blinkT = -1;
-      return 0;
-    }
-    return 1 - Math.abs(1 - (this.blinkT / d) * 2);
+    this.gaze.update(dt, time, this.state);
   }
 
   dispose(): void {

@@ -1,4 +1,5 @@
 import abuNasser from '../../persona/ar-najdi.md';
+import jelo from '../../persona/jelo.md';
 import nawwara from '../../persona/nawwara.md';
 import {
   GEMINI_API,
@@ -27,6 +28,8 @@ interface Env {
   GEMINI_VOICE: string;
   /** Default voice for Nawwara (the children's character). */
   NAWWARA_VOICE: string;
+  /** Default voice for Jelo (the space alien). */
+  JELO_VOICE: string;
   /** Comma-separated prebuilt voices the app may choose from. */
   VOICE_CHOICES: string;
 }
@@ -36,6 +39,7 @@ function characters(env: Env): Record<string, CharacterConfig> {
   return {
     'abu-nasser': { persona: abuNasser, defaultVoice: env.GEMINI_VOICE },
     nawwara: { persona: nawwara, defaultVoice: env.NAWWARA_VOICE },
+    jelo: { persona: jelo, defaultVoice: env.JELO_VOICE },
   };
 }
 

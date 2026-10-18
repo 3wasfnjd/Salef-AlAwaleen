@@ -5,6 +5,7 @@
 | `shaib.glb` | Owner's Mafateeh project, branch `mafateeh-v2`, `quest-native/assets/character/shaib.glb` (authored in Blender, original work) | MIT — © 2026 Aboden Games — عبودين قيمز |
 
 | `world/tent.glb`, `world/lantern.glb`, `world/camel_kneeling.glb`, `world/camel_standing.glb`, `world/sheep.glb` | Mafateeh `mafateeh-v2` `quest-native/assets/world/props/` — owner's props whose base is **Folio 2025 by Bruno Simon** (MIT, © 2025 Bruno Simon) | MIT |
+| `alien.glb` («جيلو») | Owner's model `Alien_Jelly.glb` (uploaded 2026-10-18, original kept in `assets-src/`), optimised by `scripts/optimize-alien.mjs`: broken face morphs, unused clips and transmission/volume removed, geometry quantized, texture WebP. Mouth, eyelids and eye highlights are rebuilt at runtime in `src/scene/character/AlienRig.ts` | © 2026 Aboden Games — عبودين قيمز |
 | `world/courtyard.glb`, `world/palm.glb`, `world/tower.glb`, `world/well.glb` | Mafateeh `mafateeh-v2` `quest-native/assets/world/` — owner's designs | MIT — © 2026 Aboden Games |
 | `world/sky_morning.jpg` | Kenney "Skyboxes" (www.kenney.nl), via Mafateeh | CC0 1.0 |
 

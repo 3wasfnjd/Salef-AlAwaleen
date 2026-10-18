@@ -15,11 +15,12 @@ import { rms } from './pcm';
  * - elder: ≈8% slower/lower with a warmer EQ (more low end, softer highs);
  * - child: ≈12% faster/higher with a brighter EQ.
  */
-export type VoiceTone = 'elder' | 'child' | 'none';
+export type VoiceTone = 'elder' | 'child' | 'alien' | 'none';
 
 const TONES: Record<VoiceTone, { rate: number; low: number; high: number }> = {
   elder: { rate: 0.92, low: 4, high: -5 },
   child: { rate: 1.12, low: -3, high: 3 },
+  alien: { rate: 1.07, low: -4, high: 5 },
   none: { rate: 1, low: 0, high: 0 },
 };
 

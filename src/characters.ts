@@ -1,11 +1,12 @@
 import type { MessageKey } from './i18n';
 import type { CharacterRig } from './scene/character/CharacterRig';
+import { AlienRig } from './scene/character/AlienRig';
 import { GlbElder } from './scene/character/GlbElder';
 import { NawwaraRig } from './scene/character/NawwaraRig';
 import { ProceduralElder } from './scene/character/ProceduralElder';
 import type { VoiceTone } from './voice/AudioPlayer';
 
-export type CharacterId = 'abu-nasser' | 'nawwara';
+export type CharacterId = 'abu-nasser' | 'nawwara' | 'jelo';
 
 export interface CharacterDef {
   id: CharacterId;
@@ -17,6 +18,8 @@ export interface CharacterDef {
   tone: Exclude<VoiceTone, 'none'>;
   /** How the character moves with the player in mixed reality. */
   motion: 'walk' | 'fly';
+  /** Made for children: shows the supervision / privacy notice. */
+  kids: boolean;
   /** Sent once when a session starts so the character greets the player. */
   greeting: string;
   load(): Promise<CharacterRig>;
@@ -34,6 +37,7 @@ export const CHARACTERS: Record<CharacterId, CharacterDef> = {
     defaultVoice: 'Algenib',
     tone: 'elder',
     motion: 'walk',
+    kids: false,
     greeting: '(دخل الضيف المجلس الآن وجلس قدامك. رحّب به باختصار.)',
     async load() {
       try {
@@ -51,8 +55,20 @@ export const CHARACTERS: Record<CharacterId, CharacterDef> = {
     defaultVoice: 'Leda',
     tone: 'child',
     motion: 'fly',
+    kids: true,
     greeting: '(جاء صديقك الآن. رحّبي به بفرح وبجملة قصيرة.)',
     load: async () => new NawwaraRig(),
+  },
+  jelo: {
+    id: 'jelo',
+    nameKey: 'char.jelo',
+    voices: ['Fenrir', 'Puck', 'Sadachbia', 'Achird', 'Zubenelgenubi', 'Laomedeia'],
+    defaultVoice: 'Fenrir',
+    tone: 'alien',
+    motion: 'walk',
+    kids: true,
+    greeting: '(وصل صديقك الأرضي الآن. سلّم عليه بحماس وبجملة قصيرة.)',
+    load: () => AlienRig.load(new URL('models/alien.glb', document.baseURI).href),
   },
 };
 
