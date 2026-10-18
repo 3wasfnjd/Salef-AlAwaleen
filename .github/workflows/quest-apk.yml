@@ -140,3 +140,41 @@ jobs:
             signature.txt
           if-no-files-found: error
           retention-days: 30
+
+  # Direct download links that never change, for main only:
+  #   https://github.com/<owner>/<repo>/releases/latest/download/salef-quest-immersive.apk
+  #   https://github.com/<owner>/<repo>/releases/latest/download/salef-quest-2d.apk
+  release:
+    needs: apk
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: quest-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: salef-quest-*-apk
+      - name: Publish rolling "quest-latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cp salef-quest-immersive-apk/*.apk salef-quest-immersive.apk
+          cp salef-quest-2D-apk/*.apk salef-quest-2d.apk
+          sha256sum salef-quest-immersive.apk salef-quest-2d.apk > SHA256SUMS.txt
+          gh release delete quest-latest --cleanup-tag --yes || true
+          gh release create quest-latest \
+            --target "$GITHUB_SHA" \
+            --title "Quest APK — build ${{ github.run_number }}" \
+            --notes "Latest Meta Quest build from main ($GITHUB_SHA). salef-quest-immersive.apk opens straight into mixed reality; salef-quest-2d.apk opens the page first." \
+            --latest \
+            salef-quest-immersive.apk salef-quest-2d.apk SHA256SUMS.txt
+          {
+            echo "### Direct download"
+            echo "- https://github.com/$GH_REPO/releases/latest/download/salef-quest-immersive.apk"
+            echo "- https://github.com/$GH_REPO/releases/latest/download/salef-quest-2d.apk"
+          } >> "$GITHUB_STEP_SUMMARY"
