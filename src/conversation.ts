@@ -1,4 +1,5 @@
 import type { InterruptMode, Transcript, VoiceSession, VoiceStatus } from './core/voice';
+import { parseCommand, type CharacterCommand, type CommandResult } from './core/commands';
 import { CHARACTERS, isCharacterId, type CharacterId } from './characters';
 import { t, type MessageKey } from './i18n';
 import type { SceneApp } from './scene/SceneApp';
@@ -35,6 +36,7 @@ export interface ConversationView {
  */
 export class Conversation {
   private session: VoiceSession | null = null;
+  private commandHandler: ((command: CharacterCommand) => CommandResult) | null = null;
   private readonly views: ConversationView[] = [];
   private lastStatus: VoiceStatus = { kind: 'idle' };
   private speaking = false;
@@ -69,6 +71,11 @@ export class Conversation {
     return this.lastStatus;
   }
 
+  /** Who carries out the character's commands (the XR experience or the flat scene). */
+  setCommandHandler(handler: (command: CharacterCommand) => CommandResult): void {
+    this.commandHandler = handler;
+  }
+
   addView(view: ConversationView): void {
     this.views.push(view);
     view.status(this.lastStatus);
@@ -85,6 +92,11 @@ export class Conversation {
       tone: this.toneOn ? CHARACTERS[this.character].tone : 'none',
       character: this.character,
       greeting: CHARACTERS[this.character].greeting,
+      onCommand: (name, args) => {
+        const command = parseCommand(name, args);
+        if (!command) return { ok: false, note: 'unknown command' };
+        return this.commandHandler?.(command) ?? { ok: false, note: 'not available here' };
+      },
     });
     this.session = session;
     session.onEvent((e) => this.app.behavior.dispatch(e, performance.now()));

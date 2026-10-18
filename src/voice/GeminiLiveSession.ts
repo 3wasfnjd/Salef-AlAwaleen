@@ -1,4 +1,5 @@
 import type { ConversationEvent } from '../core/behavior';
+import type { CommandResult } from '../core/commands';
 import { Emitter } from '../core/emitter';
 import type { InterruptMode, Transcript, VoiceErrorCode, VoiceSession, VoiceStatus } from '../core/voice';
 import { AudioPlayer, type VoiceTone } from './AudioPlayer';
@@ -18,6 +19,8 @@ export interface GeminiLiveOptions {
   character: string;
   /** Hidden first user turn that makes the character greet the player. */
   greeting: string;
+  /** Carries out a command the model called (move, gesture…); the result goes back to the model. */
+  onCommand?(name: string, args: unknown): CommandResult;
 }
 
 interface TokenResponse {
@@ -292,6 +295,7 @@ export class GeminiLiveSession implements VoiceSession {
       this.ws?.close();
       return;
     }
+    if (msg.toolCall?.functionCalls?.length) this.answerToolCalls(msg.toolCall.functionCalls);
     const content = msg.serverContent;
     if (!content) return;
 
@@ -390,10 +394,32 @@ export class GeminiLiveSession implements VoiceSession {
     this.speaking = false;
     this.userActive = false;
   }
+
+  /** Runs the model's function calls on the character and answers each one. */
+  private answerToolCalls(calls: FunctionCall[]): void {
+    const functionResponses = calls.map((call) => {
+      let result: CommandResult;
+      try {
+        result = this.options.onCommand?.(call.name ?? '', call.args) ?? { ok: false, note: 'commands are not available' };
+      } catch (err) {
+        console.warn('Command failed', call.name, err);
+        result = { ok: false, note: 'something went wrong' };
+      }
+      return { id: call.id, name: call.name, response: result };
+    });
+    this.ws?.send(JSON.stringify({ toolResponse: { functionResponses } }));
+  }
+}
+
+interface FunctionCall {
+  id?: string;
+  name?: string;
+  args?: unknown;
 }
 
 interface LiveServerMessage {
   setupComplete?: object;
+  toolCall?: { functionCalls?: FunctionCall[] };
   goAway?: { timeLeft?: string };
   sessionResumptionUpdate?: { newHandle?: string; resumable?: boolean };
   serverContent?: {

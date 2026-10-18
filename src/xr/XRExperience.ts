@@ -6,6 +6,7 @@ import { ENVIRONMENTS, type EnvironmentId } from '../scene/environments';
 import type { SceneApp, ViewMode } from '../scene/SceneApp';
 import { CelebrationShots, SHOT_KINDS, type ShotKind } from './CelebrationShots';
 import { DahroojBalloons } from '../scene/DahroojBalloons';
+import type { CharacterCommand, CommandResult } from '../core/commands';
 import { Companion } from './Companion';
 import { Sfx } from './sfx';
 import { FlyCompanion } from './FlyCompanion';
@@ -56,6 +57,8 @@ export class XRExperience {
   private readonly pads = new Map<XRInputSource, { trigger: boolean; stick: boolean; a: boolean; b: boolean; consumed: boolean }>();
   private readonly sourceController = new Map<XRInputSource, THREE.Group>();
   private readonly shots: CelebrationShots;
+  /** A celebration the character was asked to launch, fired from above its head until `until`. */
+  private fx: { kind: ShotKind; until: number } | null = null;
   /** «حمى الدحاريج»: Dahrooj balls floating like balloons around Nawwara. */
   private readonly balloons = new DahroojBalloons();
   private shotKind: ShotKind = 'bubble';
@@ -160,6 +163,48 @@ export class XRExperience {
 
   get active(): boolean {
     return this.session !== null;
+  }
+
+  /**
+   * Carries out a voice command in the headset. Returns null for what the
+   * flat scene handles the same way in and out of XR (gestures, the majlis).
+   */
+  command(cmd: CharacterCommand): CommandResult | null {
+    if (!this.session) return null;
+    const mr = this.app.mode === 'mr';
+    const camera = this.app.renderer.xr.getCamera();
+    const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+    const look = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+    switch (cmd.name) {
+      case 'move':
+        if (!mr) return { ok: false, note: 'In the majlis we sit together. Walking around the room works in mixed reality (the X button).' };
+        if (!this.companionOn) this.setCompanion(true);
+        if (this.motion === 'fly') this.flyer.command(cmd.value, head);
+        else {
+          if (cmd.value !== 'stay') this.app.setPosture('standing');
+          this.companion.command(cmd.value, head, look);
+        }
+        return { ok: true };
+      case 'pose':
+        if (!mr) return null;
+        if (this.motion === 'fly') return { ok: false, note: 'In the room she flies; she can sit down in the majlis (virtual reality).' };
+        if (!this.companionOn) this.setCompanion(true);
+        if (cmd.value === 'sit') {
+          this.companion.command('stay', head, look);
+          this.app.setPosture('seated');
+          return { ok: true, note: 'sitting here and waiting until asked to walk along' };
+        }
+        this.app.setPosture('standing');
+        return { ok: true };
+      case 'celebration':
+        this.fx = { kind: cmd.value, until: this.elapsed + 1.6 };
+        return { ok: true };
+      case 'change_place':
+        if (mr) return { ok: false, note: 'In mixed reality we are in the real room. The places are in virtual reality (the X button).' };
+        return null;
+      default:
+        return null;
+    }
   }
 
   async start(mode: ViewMode): Promise<void> {
@@ -500,6 +545,18 @@ export class XRExperience {
     if (fairy) {
       const head = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
       this.balloons.update(dt, this.app.character!.object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.2, 0)), head);
+    }
+    if (this.fx) {
+      if (this.elapsed > this.fx.until) this.fx = null;
+      else {
+        const rig = this.app.character?.object;
+        const above = !this.companionOn ? 1.3 : this.motion === 'fly' ? 0.65 : 1.75;
+        if (rig) {
+          const origin = rig.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, above, 0));
+          const dir = new THREE.Vector3((Math.random() - 0.5) * 0.9, 1, (Math.random() - 0.5) * 0.9).normalize();
+          this.shots.fire(this.fx.kind, origin, dir, 'character');
+        }
+      }
     }
     this.shots.update(dt);
     if (this.talkHintAt > 0 && this.elapsed >= this.talkHintAt) {

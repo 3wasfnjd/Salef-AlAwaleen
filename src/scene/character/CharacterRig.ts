@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type { BehaviorState } from '../../core/behavior';
+import type { GestureName } from '../../core/commands';
 
 export type Expression = 'neutral' | 'smile' | 'surprised' | 'thoughtful';
 export type Gesture = 'none' | 'explain' | 'point' | 'beard';
@@ -23,6 +24,11 @@ export interface CharacterRig {
   /** Walking speed in m/s while standing (0 = standing still). */
   setLocomotion(speed: number): void;
   setExpression(e: Expression): void;
+  /**
+   * Plays a body gesture the player asked for. Returns false if this rig
+   * cannot do it right now (spin is done by the caller for every rig).
+   */
+  perform?(g: Exclude<GestureName, 'spin'>): boolean;
   update(dtSeconds: number, timeSeconds: number): void;
   dispose(): void;
 }

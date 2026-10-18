@@ -11,9 +11,9 @@ if (!apiBase || !code) {
 
 const character = process.env.CHARACTER || 'abu-nasser';
 const PROMPTS = {
-  'abu-nasser': ['(دخل الضيف المجلس الآن وجلس قدامك. رحّب به باختصار.)', 'وش علومك يا عم؟ عطنا سالفة قصيرة من أول.'],
-  nawwara: ['(جاء صديقك الآن. رحّبي به بفرح وبجملة قصيرة.)', 'نوّارة! عطيني لغز سهل!'],
-  jelo: ['(وصل صديقك الأرضي الآن. سلّم عليه بحماس وبجملة قصيرة.)', 'جيلو! وش أكلكم في كوكبكم؟'],
+  'abu-nasser': ['(دخل الضيف المجلس الآن وجلس قدامك. رحّب به باختصار.)', 'وش علومك يا عم؟ عطنا سالفة قصيرة من أول.', 'يا عم قم ارقص لنا العرضة!'],
+  nawwara: ['(جاء صديقك الآن. رحّبي به بفرح وبجملة قصيرة.)', 'نوّارة! عطيني لغز سهل!', 'نوّارة لفّي حولي!'],
+  jelo: ['(وصل صديقك الأرضي الآن. سلّم عليه بحماس وبجملة قصيرة.)', 'جيلو! وش أكلكم في كوكبكم؟', 'جيلو تعال جنبي وارقص لي!'],
 }[character];
 
 const res = await fetch(`${apiBase}/v1/session`, {
@@ -36,7 +36,7 @@ const turns = await new Promise((resolve, reject) => {
   let turn = null;
   const timer = setTimeout(() => reject(new Error(`timeout after ${done.length} turns; current="${turn?.text ?? ''}"`)), 90000);
   const ask = (i) => {
-    turn = { prompt: PROMPTS[i], sentAt: Date.now(), firstAudioMs: null, audioBytes: 0, rate: 24000, text: '' };
+    turn = { prompt: PROMPTS[i], sentAt: Date.now(), firstAudioMs: null, audioBytes: 0, rate: 24000, text: '', calls: [] };
     ws.send(JSON.stringify({ clientContent: { turns: [{ role: 'user', parts: [{ text: PROMPTS[i] }] }], turnComplete: true } }));
   };
   ws.onerror = (e) => reject(new Error(`websocket error ${e.message ?? ''}`));
@@ -47,6 +47,13 @@ const turns = await new Promise((resolve, reject) => {
     if (msg.setupComplete) {
       console.log(`setupComplete after ${Date.now() - t0} ms`);
       ask(0);
+      return;
+    }
+    // Commands (function calls): record them and answer like the app does.
+    if (msg.toolCall?.functionCalls?.length && turn) {
+      const calls = msg.toolCall.functionCalls;
+      turn.calls.push(...calls.map((f) => `${f.name}(${JSON.stringify(f.args)})`));
+      ws.send(JSON.stringify({ toolResponse: { functionResponses: calls.map((f) => ({ id: f.id, name: f.name, response: { ok: true } })) } }));
       return;
     }
     const c = msg.serverContent;
@@ -74,6 +81,12 @@ const turns = await new Promise((resolve, reject) => {
 for (const t of turns) {
   console.log(`\n> ${t.prompt}`);
   console.log(`first audio after ${t.firstAudioMs} ms, audio ${t.seconds.toFixed(1)} s`);
+  if (t.calls.length) console.log(`commands: ${t.calls.join(', ')}`);
   console.log(`${served}: ${t.text}`);
 }
 if (turns.some((t) => t.seconds < 0.5)) process.exit(1);
+// The last prompt asks for a movement: the character must call a command for it.
+if (!turns.at(-1).calls.length) {
+  console.error('no command was called for the movement request');
+  process.exit(1);
+}

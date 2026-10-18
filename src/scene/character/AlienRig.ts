@@ -122,7 +122,7 @@ export class AlienRig implements CharacterRig {
       const clip = THREE.AnimationClip.findByName(clips, name);
       if (clip) this.actions[key] = this.mixer.clipAction(clip);
     }
-    for (const key of ['wave', 'celebrate'] as const) {
+    for (const key of ['wave', 'celebrate', 'dance'] as const) {
       const a = this.actions[key];
       if (a) {
         a.setLoop(THREE.LoopOnce, 1);
@@ -236,15 +236,18 @@ export class AlienRig implements CharacterRig {
     if (!this.oneShot) this.play(next, fade);
   }
 
-  private playOnce(clip: 'wave' | 'celebrate'): void {
+  private playOnce(clip: 'wave' | 'celebrate' | 'dance'): boolean {
     const a = this.actions[clip];
-    if (!a || this.posture === 'seated') return; // both are standing clips
+    if (!a || this.posture === 'seated') return false; // all standing clips
     this.oneShot = true;
-    this.current = undefined; // force a restart even if it is the same clip
-    a.reset();
-    this.base?.crossFadeTo(a, 0.25, false);
-    a.play();
-    this.current = a;
+    if (this.current === a) a.reset().play();
+    else this.play(a, 0.25);
+    return true;
+  }
+
+  perform(g: 'wave' | 'celebrate' | 'dance'): boolean {
+    if (g === 'celebrate') this.wobble = 1;
+    return this.playOnce(g);
   }
 
   setPosture(requested: Posture): void {

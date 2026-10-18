@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { Room } from './room';
 
+/** What the player asked him to do (voice commands); following is the default. */
+export type CompanionMode = 'follow' | 'stay' | 'come' | 'circle';
+
 export interface CompanionOptions {
   /** Where he walks relative to the player's walking direction (metres). */
   side: number;
@@ -52,6 +55,12 @@ export class Companion {
   speed = 0;
   private walking = false;
   private stuck = 0;
+  private mode: CompanionMode = 'follow';
+  /** come: resume following once the player walks this far away. */
+  private autoFollow = false;
+  private modeT = 0;
+  private circleFrom = 0;
+  private readonly hold = new THREE.Vector3();
   /** True on the frame he hopped to catch up (for an effect or sound). */
   hopped = false;
   private readonly heading = new THREE.Vector3(0, 0, -1);
@@ -71,6 +80,7 @@ export class Companion {
     this.yaw = yaw;
     this.speed = 0;
     this.walking = false;
+    this.mode = 'follow';
     this.heading.set(lookForward.x, 0, lookForward.z);
     if (this.heading.lengthSq() < 1e-6) this.heading.set(0, 0, -1);
     this.heading.normalize();
@@ -78,10 +88,35 @@ export class Companion {
     this.hasLastHead = true;
   }
 
+  get currentMode(): CompanionMode {
+    return this.mode;
+  }
+
+  /**
+   * come: walk to just in front of the player and wait there (following again
+   * once they walk off). stay: wait right here. follow: walk along again.
+   * circle: walk once around the player, then follow.
+   */
+  command(mode: CompanionMode, head: THREE.Vector3, lookForward: THREE.Vector3): void {
+    this.mode = mode;
+    this.modeT = 0;
+    this.stuck = 0;
+    this.autoFollow = mode === 'come';
+    if (mode === 'stay') this.hold.copy(this.position);
+    if (mode === 'come') {
+      const f = new THREE.Vector3(lookForward.x, 0, lookForward.z);
+      if (f.lengthSq() < 1e-6) f.set(0, 0, -1);
+      f.normalize();
+      this.hold.set(head.x + f.x * 0.95, 0, head.z + f.z * 0.95);
+    }
+    if (mode === 'circle') this.circleFrom = Math.atan2(this.position.x - head.x, this.position.z - head.z);
+  }
+
   update(dt: number, head: THREE.Vector3, room: Room = new Room()): void {
     if (dt <= 0) return;
     const o = this.opts;
     const floorHead = this.tmp.set(head.x, 0, head.z);
+    this.modeT += dt;
 
     // Walking direction follows how the player moves, not where they glance.
     if (this.hasLastHead) {
@@ -101,13 +136,59 @@ export class Companion {
       z: floorHead.z + right.z * side + this.heading.z * ahead,
     });
     const here = { x: this.position.x, z: this.position.z };
+    // Reachable from the player — unless they stand right against furniture
+    // (or over a scanned rug), where every path "crosses" it: then any free spot.
+    const fromPlayer = room.isBlocked({ x: floorHead.x, z: floorHead.z }) ? null : { x: floorHead.x, z: floorHead.z };
+    if (this.mode === 'come' && this.autoFollow && Math.hypot(this.hold.x - floorHead.x, this.hold.z - floorHead.z) > 2.5) {
+      this.mode = 'follow'; // the player walked off: go along with them again
+    }
+    if (this.mode === 'circle' && this.modeT > 8) this.mode = 'follow';
     // A spot counts if it is free and the player could reach it: the path from
     // where *he* stands may be blocked by a table; he walks around or hops.
-    const chosen =
-      room.firstFree(
-        [spot(o.side, o.ahead), spot(-o.side, o.ahead), spot(o.side, -0.6), spot(-o.side, -0.6), spot(0, -0.9)],
-        { x: floorHead.x, z: floorHead.z },
-      ) ?? here;
+    // Any free spot near the player, closest to where he is now: used when
+    // every preferred spot is taken by furniture or a wall.
+    const nearPlayer = () => {
+      const ring: Array<{ x: number; z: number }> = [];
+      for (const r of [0.8, 1.2, 1.7]) {
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2;
+          ring.push({ x: floorHead.x + Math.sin(a) * r, z: floorHead.z + Math.cos(a) * r });
+        }
+      }
+      ring.sort((p, q) => Math.hypot(p.x - here.x, p.z - here.z) - Math.hypot(q.x - here.x, q.z - here.z));
+      return room.firstFree(ring, fromPlayer);
+    };
+    let chosen: { x: number; z: number };
+    if (this.mode === 'stay') {
+      chosen = { x: this.hold.x, z: this.hold.z };
+    } else if (this.mode === 'come') {
+      const f = { x: this.hold.x - floorHead.x, z: this.hold.z - floorHead.z };
+      const side = { x: -f.z * 0.6, z: f.x * 0.6 };
+      chosen =
+        room.firstFree(
+          [
+            { x: this.hold.x, z: this.hold.z },
+            { x: this.hold.x + side.x, z: this.hold.z + side.z },
+            { x: this.hold.x - side.x, z: this.hold.z - side.z },
+          ],
+          fromPlayer,
+        ) ??
+        nearPlayer() ??
+        here;
+    } else if (this.mode === 'circle') {
+      const a = this.circleFrom + (this.modeT / 8) * Math.PI * 2;
+      const at = (r: number) => ({ x: floorHead.x + Math.sin(a) * r, z: floorHead.z + Math.cos(a) * r });
+      // Skip the stretches of the circle that furniture takes: keep heading for the last free point.
+      chosen = room.firstFree([at(1.3), at(1.0), at(1.7)], fromPlayer) ?? { x: this.target.x, z: this.target.z };
+    } else {
+      chosen =
+        room.firstFree(
+          [spot(o.side, o.ahead), spot(-o.side, o.ahead), spot(o.side, -0.6), spot(-o.side, -0.6), spot(0, -0.9)],
+          fromPlayer,
+        ) ??
+        nearPlayer() ??
+        here;
+    }
     this.target.set(chosen.x, 0, chosen.z);
     this.hopped = false;
 

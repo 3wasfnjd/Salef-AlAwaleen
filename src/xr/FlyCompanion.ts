@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { shortestAngle } from './Companion';
+import { shortestAngle, type CompanionMode } from './Companion';
 import { Room } from './room';
 
 export interface FlyOptions {
@@ -39,6 +39,10 @@ export class FlyCompanion {
   private readonly heading = new THREE.Vector3(0, 0, -1);
   private t = 0;
   private readonly opts: FlyOptions;
+  private mode: CompanionMode = 'follow';
+  private modeT = 0;
+  private circleFrom = 0;
+  private readonly hold = new THREE.Vector3();
 
   constructor(options: Partial<FlyOptions> = {}) {
     this.opts = { ...DEFAULTS, ...options };
@@ -48,9 +52,26 @@ export class FlyCompanion {
     this.position.copy(position);
     this.velocity.set(0, 0, 0);
     this.speed = 0;
+    this.mode = 'follow';
     this.heading.set(lookForward.x, 0, lookForward.z);
     if (this.heading.lengthSq() < 1e-6) this.heading.set(0, 0, -1);
     this.heading.normalize();
+  }
+
+  get currentMode(): CompanionMode {
+    return this.mode;
+  }
+
+  /**
+   * come: fly in close in front of the player for a few seconds. stay: hover
+   * right here. follow: roam in front of the player again. circle: fly once
+   * around the player's head.
+   */
+  command(mode: CompanionMode, head: THREE.Vector3): void {
+    this.mode = mode;
+    this.modeT = 0;
+    if (mode === 'stay') this.hold.copy(this.position);
+    if (mode === 'circle') this.circleFrom = Math.atan2(this.position.x - head.x, this.position.z - head.z);
   }
 
   /** The spot she is drifting toward this frame (exposed for tests). */
@@ -107,6 +128,20 @@ export class FlyCompanion {
       theta = -theta;
     }
     this.target.set(goal.x, y, goal.z);
+
+    // Commands override the roaming spot.
+    this.modeT += dt;
+    if ((this.mode === 'come' && this.modeT > 6) || (this.mode === 'circle' && this.modeT > 7)) this.mode = 'follow';
+    if (this.mode === 'stay') this.target.copy(this.hold).setY(this.hold.y + Math.sin(t * 0.7) * 0.05);
+    else if (this.mode === 'come') {
+      const near = spot(0, o.minDistance + 0.08);
+      const free = room.firstFree([near], from);
+      if (free) this.target.set(free.x, head.y - 0.35, free.z);
+    } else if (this.mode === 'circle') {
+      const a = this.circleFrom + (this.modeT / 7) * Math.PI * 2;
+      const around = { x: head.x + Math.sin(a) * 1.25, z: head.z + Math.cos(a) * 1.25 };
+      if (!room.crosses(from, around)) this.target.set(around.x, head.y - 0.3 + Math.sin(a * 2) * 0.15, around.z);
+    }
 
     // Spring toward the target, capped speed: smooth, floaty flight.
     const toTarget = new THREE.Vector3().subVectors(this.target, this.position);

@@ -8,13 +8,15 @@ describe('token server logic', () => {
     expect(setup.model).toBe('models/gemini-3.1-flash-live-preview');
     expect(setup).toMatchObject({
       generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Algenib' } } } },
-      systemInstruction: { parts: [{ text: 'أنت أبو ناصر' }] },
     });
+    const text = (setup.systemInstruction as { parts: Array<{ text: string }> }).parts[0].text;
+    expect(text.startsWith('أنت أبو ناصر')).toBe(true);
+    expect(text).toContain('## الأوامر والحركة');
   });
 
   it('builds the field mask like the official SDK', () => {
     expect(fieldMask(setup)).toBe(
-      'model,generationConfig.responseModalities,generationConfig.speechConfig,systemInstruction.parts,inputAudioTranscription,outputAudioTranscription,contextWindowCompression.slidingWindow',
+      'model,generationConfig.responseModalities,generationConfig.speechConfig,systemInstruction.parts,tools,inputAudioTranscription,outputAudioTranscription,contextWindowCompression.slidingWindow',
     );
   });
 

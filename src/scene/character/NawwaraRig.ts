@@ -158,6 +158,8 @@ export class NawwaraRig implements CharacterRig {
   private browUp = 0;
   private happy = 0;
   private hoverY = SEAT;
+  /** A gesture the player asked for, and how long it has been playing. */
+  private act: { kind: 'wave' | 'celebrate' | 'dance'; t: number } | null = null;
   private readonly tmp = new THREE.Vector3();
   private readonly tmpM = new THREE.Matrix4();
   private readonly disposables: Array<{ dispose(): void }> = [];
@@ -371,6 +373,11 @@ export class NawwaraRig implements CharacterRig {
     // Gestures follow the behaviour state (see update).
   }
 
+  perform(g: 'wave' | 'celebrate' | 'dance'): boolean {
+    this.act = { kind: g, t: 0 };
+    return true;
+  }
+
   setPosture(p: Posture): void {
     this.posture = p;
     if (p === 'seated') this.walk = 0;
@@ -444,6 +451,35 @@ export class NawwaraRig implements CharacterRig {
       rUp = Math.sin(this.walkPhase) * 0.4;
       lUp = -Math.sin(this.walkPhase) * 0.4;
     }
+    // Requested gestures override the state's arms: wave, a backflip, a little dance.
+    let flip = 0;
+    let sway = 0;
+    let bounce = 0;
+    if (this.act) {
+      const a = this.act;
+      a.t += dt;
+      const len = a.kind === 'dance' ? 4 : a.kind === 'wave' ? 2.4 : 1.8;
+      if (a.t >= len) this.act = null;
+      else if (a.kind === 'wave') {
+        rUp = -2.4; rOut = 0.3; rBend = -0.4 + Math.sin(a.t * 9) * 0.45;
+      } else if (a.kind === 'celebrate') {
+        rUp = -2.6; rOut = 0.4; rBend = -0.2; lUp = -2.6; lOut = 0.4; lBend = -0.2;
+        const p = Math.min(1, a.t / 0.9);
+        flip = -Math.PI * 2 * (p * p * (3 - 2 * p));
+        bounce = Math.sin(Math.min(1, a.t / 0.9) * Math.PI) * 0.12;
+      } else {
+        const beat = a.t * 6;
+        rUp = -1.8 - Math.sin(beat) * 0.6; lUp = -1.8 + Math.sin(beat) * 0.6;
+        rOut = 0.6; lOut = 0.6; rBend = -0.6; lBend = -0.6;
+        sway = Math.sin(beat) * 0.25;
+        bounce = Math.abs(Math.sin(beat)) * 0.05;
+      }
+    }
+    this.hover.rotation.x = flip;
+    this.body.rotation.z = sway;
+    this.hover.position.y += bounce;
+    const happyAct = this.act !== null;
+
     const k = s === 'interrupted' ? 16 : 7;
     this.armR.root.rotation.x = damp(this.armR.root.rotation.x, rUp, k, dt);
     this.armR.root.rotation.z = damp(this.armR.root.rotation.z, -rOut, k, dt);
@@ -466,7 +502,7 @@ export class NawwaraRig implements CharacterRig {
     // Face.
     const browT = s === 'listening' || s === 'interrupted' ? 1 : talking ? 0.3 + this.mouth01 * 0.5 : s === 'thinking' ? 0.6 : 0;
     this.browUp = damp(this.browUp, browT, 8, dt);
-    const happyT = s === 'reacting' || this.expression === 'smile' ? 1 : talking ? 0.4 : 0.25;
+    const happyT = s === 'reacting' || this.expression === 'smile' || happyAct ? 1 : talking ? 0.4 : 0.25;
     this.happy = damp(this.happy, happyT, 5, dt);
     this.brows.forEach((b, i) => {
       b.position.y = 0.062 + this.browUp * 0.012;

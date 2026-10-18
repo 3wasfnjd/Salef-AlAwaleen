@@ -3,6 +3,8 @@
  * unit-tested with vitest.
  */
 
+import { CHARACTER_TOOLS, COMMANDS_GUIDE } from './tools';
+
 export const GEMINI_API = 'https://generativelanguage.googleapis.com';
 export const LIVE_WS_URL =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained';
@@ -15,7 +17,7 @@ export interface LiveSetupOptions {
 
 /**
  * Live API session setup. Everything here is locked into the ephemeral token,
- * so a client cannot change the persona, voice or model.
+ * so a client cannot change the persona, voice, model or the commands.
  */
 export function buildLiveSetup({ model, voice, persona }: LiveSetupOptions): Record<string, unknown> {
   return {
@@ -24,7 +26,9 @@ export function buildLiveSetup({ model, voice, persona }: LiveSetupOptions): Rec
       responseModalities: ['AUDIO'],
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
     },
-    systemInstruction: { parts: [{ text: persona }] },
+    systemInstruction: { parts: [{ text: persona + COMMANDS_GUIDE }] },
+    // Commands the character can carry out (see tools.ts); the app executes them.
+    tools: [{ functionDeclarations: CHARACTER_TOOLS }],
     inputAudioTranscription: {},
     outputAudioTranscription: {},
     // Keeps long storytelling sessions going past the raw context limit.

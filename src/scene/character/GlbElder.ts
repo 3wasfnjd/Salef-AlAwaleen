@@ -50,7 +50,9 @@ export class GlbElder implements CharacterRig {
   private readonly gaze: Gaze;
   private readonly blinker = new Blinker();
   private readonly model: THREE.Object3D;
-  private readonly actions: Partial<Record<'sit' | 'stand' | 'walk', THREE.AnimationAction>> = {};
+  private readonly actions: Partial<Record<'sit' | 'stand' | 'walk' | 'celebrate' | 'dance', THREE.AnimationAction>> = {};
+  /** A requested gesture clip is playing; locomotion waits until it ends. */
+  private oneShot = false;
   private current?: THREE.AnimationAction;
   private posture: Posture = 'seated';
 
@@ -94,6 +96,16 @@ export class GlbElder implements CharacterRig {
     this.actions.sit = action('sit_idle') ?? action('idle');
     this.actions.stand = action('idle');
     this.actions.walk = action('walk');
+    this.actions.celebrate = action('celebrate');
+    this.actions.dance = action('ardah'); // the Najdi sword dance
+    for (const a of [this.actions.celebrate, this.actions.dance]) {
+      a?.setLoop(THREE.LoopOnce, 1);
+      if (a) a.clampWhenFinished = true;
+    }
+    this.mixer.addEventListener('finished', () => {
+      this.oneShot = false;
+      this.play(this.posture === 'seated' ? this.actions.sit : this.actions.stand, 0.4);
+    });
     this.play(this.actions.sit, 0);
   }
 
@@ -108,12 +120,22 @@ export class GlbElder implements CharacterRig {
     const p: Posture = requested === 'flying' ? 'standing' : requested; // the elder keeps his feet on the ground
     if (p === this.posture) return;
     this.posture = p;
+    this.oneShot = false;
     this.model.position.y = p === 'seated' ? SEAT_HEIGHT : 0;
     this.play(p === 'seated' ? this.actions.sit : this.actions.stand);
   }
 
+  perform(g: 'wave' | 'celebrate' | 'dance'): boolean {
+    const clip = g === 'wave' ? undefined : this.actions[g];
+    if (!clip || this.posture === 'seated') return false; // standing clips; no wave clip authored
+    this.oneShot = true;
+    if (this.current === clip) clip.reset().play();
+    else this.play(clip, 0.3);
+    return true;
+  }
+
   setLocomotion(speed: number): void {
-    if (this.posture !== 'standing') return;
+    if (this.posture !== 'standing' || this.oneShot) return;
     const walk = this.actions.walk;
     if (speed > 0.08) {
       this.play(walk, 0.25);

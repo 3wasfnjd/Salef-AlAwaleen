@@ -76,6 +76,10 @@ export class SceneApp {
     this.stage.add(rig.object);
   }
 
+  get currentPosture(): Posture {
+    return this.posture;
+  }
+
   /** Posture survives character swaps (e.g. switching while walking together). */
   setPosture(p: Posture): void {
     this.posture = p;

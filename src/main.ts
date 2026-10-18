@@ -1,4 +1,5 @@
 import './ui/style.css';
+import { CommandRunner } from './commands';
 import { Conversation } from './conversation';
 import type { BehaviorState, ConversationEvent } from './core/behavior';
 import { t } from './i18n';
@@ -74,6 +75,9 @@ async function boot(): Promise<void> {
     conversation,
     motion: () => CHARACTERS[conversation.character].motion,
   });
+
+  // Voice commands ("come here", "dance"…) carried out on the character.
+  conversation.setCommandHandler(new CommandRunner(app, xr, setEnvironment).run);
 
   const overlay = new Overlay(ui, caps, {
     enterXR: (mode) => {

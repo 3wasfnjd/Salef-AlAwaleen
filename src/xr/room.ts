@@ -156,10 +156,13 @@ export class Room {
     return from;
   }
 
-  /** First candidate spot that is free and reachable in a straight line from `origin`. */
-  firstFree(candidates: P2[], origin: P2): P2 | null {
+  /**
+   * First candidate spot that is free and reachable in a straight line from
+   * `origin` (any free spot when `origin` is null).
+   */
+  firstFree(candidates: P2[], origin: P2 | null): P2 | null {
     if (!this.known) return candidates[0] ?? null;
-    return candidates.find((c) => !this.isBlocked(c) && !this.crosses(origin, c)) ?? null;
+    return candidates.find((c) => !this.isBlocked(c) && (!origin || !this.crosses(origin, c))) ?? null;
   }
 }
 
