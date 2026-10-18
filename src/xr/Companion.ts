@@ -16,6 +16,9 @@ export interface CompanionOptions {
   personalSpace: number;
   /** Player speed (m/s) above which their walking direction updates. */
   headingSpeed: number;
+  /** Stuck (furniture in the way) this long, or this far behind: hop to his spot. */
+  stuckFor: number;
+  catchUpDistance: number;
 }
 
 const DEFAULTS: CompanionOptions = {
@@ -28,6 +31,8 @@ const DEFAULTS: CompanionOptions = {
   turnRate: 5,
   personalSpace: 0.55,
   headingSpeed: 0.25,
+  stuckFor: 1.2,
+  catchUpDistance: 3.5,
 };
 
 /**
@@ -37,13 +42,18 @@ const DEFAULTS: CompanionOptions = {
  * the player's head pose each frame; read position / yaw / speed back.
  * Works on the floor plane. With a known `Room` he walks around walls and
  * furniture: his spot falls back to the other side / behind the player when
- * the preferred one is blocked, and each step slides along obstacles.
+ * the preferred one is blocked, and each step slides along obstacles. If
+ * furniture keeps him from getting there, he hops to his spot beside the
+ * player rather than standing still behind it.
  */
 export class Companion {
   readonly position = new THREE.Vector3();
   yaw = 0;
   speed = 0;
   private walking = false;
+  private stuck = 0;
+  /** True on the frame he hopped to catch up (for an effect or sound). */
+  hopped = false;
   private readonly heading = new THREE.Vector3(0, 0, -1);
   private readonly lastHead = new THREE.Vector3();
   private hasLastHead = false;
@@ -91,12 +101,15 @@ export class Companion {
       z: floorHead.z + right.z * side + this.heading.z * ahead,
     });
     const here = { x: this.position.x, z: this.position.z };
+    // A spot counts if it is free and the player could reach it: the path from
+    // where *he* stands may be blocked by a table; he walks around or hops.
     const chosen =
       room.firstFree(
         [spot(o.side, o.ahead), spot(-o.side, o.ahead), spot(o.side, -0.6), spot(-o.side, -0.6), spot(0, -0.9)],
-        here,
+        { x: floorHead.x, z: floorHead.z },
       ) ?? here;
     this.target.set(chosen.x, 0, chosen.z);
+    this.hopped = false;
 
     const toTarget = new THREE.Vector3().subVectors(this.target, this.position);
     const dist = toTarget.length();
@@ -112,9 +125,16 @@ export class Companion {
       const wanted = { x: here.x + dir.x * step, z: here.z + dir.z * step };
       // If he somehow starts inside an obstacle, let him walk out of it.
       const next = room.isBlocked(here) ? wanted : room.step(here, wanted);
+      const progress = Math.hypot(next.x - here.x, next.z - here.z);
+      this.stuck = progress < step * 0.3 ? this.stuck + dt : 0;
       this.position.set(next.x, 0, next.z);
-      if (next === here) this.speed = 0; // fully blocked this frame
       desiredYaw = Math.atan2(dir.x, dir.z);
+      if (this.stuck > o.stuckFor || dist > o.catchUpDistance) {
+        this.position.copy(this.target);
+        this.stuck = 0;
+        this.speed = 0;
+        this.hopped = true;
+      }
     } else {
       desiredYaw = Math.atan2(floorHead.x - this.position.x, floorHead.z - this.position.z);
     }

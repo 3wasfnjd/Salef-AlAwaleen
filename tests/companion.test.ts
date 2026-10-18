@@ -78,4 +78,60 @@ describe('Companion', () => {
     expect(shortestAngle(3, -3)).toBeCloseTo(2 * Math.PI - 6);
     expect(shortestAngle(0, 1)).toBeCloseTo(1);
   });
+
+  it('keeps up across a furnished room and past the scanned floor', () => {
+    const room = new Room();
+    const box = (x0: number, z0: number, x1: number, z1: number) => [
+      { x: x0, z: z0 },
+      { x: x1, z: z0 },
+      { x: x1, z: z1 },
+      { x: x0, z: z1 },
+    ];
+    // 4 × 4 m scanned floor; a long table and a couch across the way.
+    room.geometry = {
+      floorY: 0,
+      floor: box(-2, 2, 2, -2),
+      walls: [{ a: { x: -8, z: -8 }, b: { x: 8, z: -8 } }],
+      obstacles: [box(-1.5, -1.0, 1.5, -1.6), box(-1.2, -2.6, 1.2, -3.2)],
+      obstacleHeights: [0.75, 0.45],
+    };
+    const c = new Companion();
+    c.reset(new THREE.Vector3(0.8, 0, 0.5), 0, head(0, 0), new THREE.Vector3(0, 0, -1));
+    // The player walks around the table's end, then on out of the scanned area.
+    const path = (t: number) => (t < 3 ? head(-2 * (t / 3), 0) : head(-2, -5 * Math.min(1, (t - 3) / 6)));
+    run(c, 9, path, 0, room.forWalking());
+    run(c, 3, () => head(-2, -5), 0, room.forWalking());
+    const p = c.position;
+    expect(Math.hypot(p.x - -2, p.z - -5)).toBeLessThan(1.3); // beside the player again
+    expect(room.forWalking().isBlocked({ x: p.x, z: p.z })).toBe(false); // not inside furniture
+  });
+
+  it('hops to the player when a table keeps him from getting there', () => {
+    const room = new Room();
+    // A wide table between him and the player.
+    room.geometry = {
+      floorY: 0,
+      floor: null,
+      walls: [],
+      obstacles: [
+        [
+          { x: -3, z: -0.8 },
+          { x: 3, z: -0.8 },
+          { x: 3, z: -1.4 },
+          { x: -3, z: -1.4 },
+        ],
+      ],
+    };
+    const c = new Companion();
+    c.reset(new THREE.Vector3(0, 0, -2.2), 0, head(0, 0), new THREE.Vector3(0, 0, 1));
+    let hopped = false;
+    const dt = 1 / 72;
+    for (let t = 0; t < 4; t += dt) {
+      c.update(dt, head(0, 0), room);
+      hopped ||= c.hopped;
+    }
+    expect(hopped).toBe(true);
+    expect(c.position.z).toBeGreaterThan(-0.8); // on the player's side of the table
+    expect(room.isBlocked({ x: c.position.x, z: c.position.z })).toBe(false);
+  });
 });

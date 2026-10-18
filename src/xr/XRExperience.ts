@@ -70,6 +70,8 @@ export class XRExperience {
   private voiceStatus: VoiceStatus = { kind: 'idle' };
   /** "Walk with me" (MR only): the elder stands and walks beside the player. */
   private companionOn = false;
+  /** When to show the "squeeze to talk" hint (once the character has settled). */
+  private talkHintAt = -1;
   referenceSpace: XRReferenceSpaceType = 'local-floor';
   private readonly companion = new Companion();
   private readonly flyer = new FlyCompanion();
@@ -294,6 +296,12 @@ export class XRExperience {
       line.scale.z = 2;
       controller.add(line);
       controller.addEventListener('connected', (e) => this.sourceController.set((e as unknown as { data: XRInputSource }).data, controller));
+      // Grip (squeeze) starts or ends the conversation without opening the menu.
+      controller.addEventListener('squeezestart', () => {
+        if (!this.session) return;
+        this.activate(this.callbacks.conversation.active && this.callbacks.conversation.isSpeaking ? 'cut' : 'talk');
+        this.sfx?.play('click');
+      });
       // Hand tracking (no gamepad): a pinch presses menu buttons or fires one shot.
       controller.addEventListener('select', (e) => {
         const source = (e as unknown as { data?: XRInputSource }).data;
@@ -342,28 +350,50 @@ export class XRExperience {
   private cycleShot(controller: THREE.Object3D | undefined): void {
     this.shotKind = SHOT_KINDS[(SHOT_KINDS.indexOf(this.shotKind) + 1) % SHOT_KINDS.length];
     this.sfx?.play('click');
+    const at = controller ? new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld).add(new THREE.Vector3(0, 0.12, 0)) : null;
+    this.showLabel(t(`shot.${this.shotKind}` as MessageKey), at, 1.5);
+  }
+
+  /** A short floating label (shot name by the hand, or a hint over the character). */
+  private showLabel(text: string, at: THREE.Vector3 | null, seconds: number): void {
     const canvas = document.createElement('canvas');
-    canvas.width = 384;
-    canvas.height = 120;
     const c = canvas.getContext('2d')!;
+    const font = '600 56px system-ui, "Noto Sans Arabic", sans-serif';
+    c.font = font;
+    canvas.width = Math.max(384, Math.ceil(c.measureText(text).width) + 80);
+    canvas.height = 120;
+    // Drawn upside down with flipY off: upright even where the browser ignores flipY for canvases.
+    c.translate(0, 120);
+    c.scale(1, -1);
     c.fillStyle = 'rgba(28,20,14,0.85)';
     c.beginPath();
-    c.roundRect(0, 0, 384, 120, 40);
+    c.roundRect(0, 0, canvas.width, 120, 40);
     c.fill();
     c.fillStyle = '#ffe9b0';
-    c.font = '600 56px system-ui, "Noto Sans Arabic", sans-serif';
+    c.font = font;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.direction = 'rtl';
-    c.fillText(t(`shot.${this.shotKind}` as MessageKey), 192, 64);
+    c.fillText(text, canvas.width / 2, 64);
     const mat = this.shotLabel.material;
     mat.map?.dispose();
     mat.map = new THREE.CanvasTexture(canvas);
+    mat.map.flipY = false;
     mat.map.colorSpace = THREE.SRGBColorSpace;
     mat.needsUpdate = true;
-    if (controller) this.shotLabel.position.setFromMatrixPosition(controller.matrixWorld).add(new THREE.Vector3(0, 0.12, 0));
+    this.shotLabel.scale.set(0.05 * (canvas.width / 120), 0.05, 1);
+    if (at) this.shotLabel.position.copy(at);
     this.shotLabel.visible = true;
-    this.shotLabelUntil = this.elapsed + 1.5;
+    this.shotLabelUntil = this.elapsed + seconds;
+  }
+
+  /** Tells the player how to start talking, over the character's head, if they haven't yet. */
+  private hintTalk(): void {
+    const voice = this.callbacks.conversation;
+    const rig = this.app.character?.object;
+    if (!voice.configured || voice.active || !rig) return;
+    const top = rig.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, this.motion === 'fly' ? 0.55 : 1.25, 0));
+    this.showLabel(t('xr.talkHint'), top, 6);
   }
 
   private onFrame(dt: number, frame?: XRFrame): void {
@@ -416,7 +446,8 @@ export class XRExperience {
         this.app.stage.rotation.set(0, this.flyer.yaw, 0);
         this.app.character?.setLocomotion(this.flyer.speed);
       } else {
-        this.companion.update(dt, head, this.room);
+        this.companion.update(dt, head, this.room.forWalking());
+        if (this.companion.hopped) this.sfx?.play('pop'); // caught up after furniture blocked him
         this.app.stage.position.copy(this.companion.position).setY(this.room.geometry.floorY);
         this.app.stage.rotation.set(0, this.companion.yaw, 0);
         this.app.character?.setLocomotion(this.companion.speed);
@@ -471,6 +502,10 @@ export class XRExperience {
       this.balloons.update(dt, this.app.character!.object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.2, 0)), head);
     }
     this.shots.update(dt);
+    if (this.talkHintAt > 0 && this.elapsed >= this.talkHintAt) {
+      this.talkHintAt = -1;
+      this.hintTalk();
+    }
     if (this.shotLabel.visible && this.elapsed > this.shotLabelUntil) this.shotLabel.visible = false;
 
     // Frame-rate measurement shown on the panel (real numbers from the device).
@@ -527,6 +562,7 @@ export class XRExperience {
       this.roomOutlineUntil = this.elapsed + 6;
       this.app.majlis.core.visible = false;
       this.startMotion(head, camera);
+      this.talkHintAt = this.elapsed + 1.5;
     } else {
       this.hint = '';
       rig?.setLocomotion(0);

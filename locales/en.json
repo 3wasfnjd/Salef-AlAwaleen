@@ -92,5 +92,6 @@
   "voice.Fenrir": "Fenrir — excitable",
   "voice.Sadachbia": "Sadachbia — lively",
   "voice.Achird": "Achird — friendly",
-  "voice.Zubenelgenubi": "Zubenelgenubi — casual"
+  "voice.Zubenelgenubi": "Zubenelgenubi — casual",
+  "xr.talkHint": "Squeeze the grip button to talk"
 }

@@ -78,7 +78,8 @@ export class Room {
   constructor(readonly radius = 0.25) {}
 
   get known(): boolean {
-    return this.geometry.walls.length > 0 || this.geometry.floor !== null;
+    const g = this.geometry;
+    return g.walls.length > 0 || g.floor !== null || g.obstacles.length > 0;
   }
 
   /**
@@ -96,6 +97,14 @@ export class Room {
       obstacles: g.obstacles.filter((_, i) => (g.obstacleHeights?.[i] ?? Infinity) > height),
     };
     return flight;
+  }
+
+  /**
+   * The room for someone walking: walls and furniture, but no floor outline,
+   * so they keep following when the player walks past the scanned area.
+   */
+  forWalking(): Room {
+    return this.forFlight(-Infinity);
   }
 
   /** Distance from `p` to the nearest wall, furniture edge or floor edge. */
